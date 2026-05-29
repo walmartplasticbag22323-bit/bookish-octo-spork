@@ -1,0 +1,2634 @@
+-- Body Part Remover - SIMPLE VERSION + LIGHTSABER MODE
+-- by motorolav99 (modified)
+-- NOW WITH CLICK-TO-DELETE LIGHTSABER MODE!
+
+local plr = game.Players.LocalPlayer
+local chr = plr.Character or plr.CharacterAdded:Wait()
+local selectedPlayer = plr
+local selectedCharacter = chr
+local selectedMode = "self" -- "self", "other", "everyone"
+local mouse = plr:GetMouse()
+
+-- Lightsaber Mode Variables
+local lightsaberMode = false -- OFF BY DEFAULT!
+local unanchorMode = false -- Unanchor mode OFF by default
+local stealMode = false -- NEW: Steal mode OFF by default
+local stealFromSelf = false -- NEW: Allow stealing from yourself
+local selectionBoxEnabled = true
+local selectedPart = nil
+local whitelistedPlayers = {plr.Name} -- Default: whitelist yourself
+local lightsaberGui = nil
+local selectionBox = nil
+local useBToolsPlus = false -- Toggle for Building Tools Plus
+local stolenParts = {} -- NEW: Track stolen parts
+local partsLocked = false -- Track if stolen parts are locked
+local RS = game:GetService("ReplicatedStorage") -- For steal functionality
+local safeguardEnabled = true -- NEW: Safeguard for whitelist and grass protection
+
+-- 3D Drag Selection Variables
+local dragSelectionMode = false -- Toggle for drag selection
+local dragSelectionActive = false -- Currently dragging
+local dragStartPos = nil -- Starting position
+local dragCurrentPos = nil -- Current mouse position
+local dragPhase = 0 -- 0 = not started, 1 = X axis, 2 = Z axis, 3 = Y axis
+local dragSelectionBox = nil -- Visual selection box
+local dragSelectedParts = {} -- Parts in selection
+local dragLockedX = nil -- Locked X dimension after phase 1
+local dragLockedZ = nil -- Locked Z dimension after phase 2
+local dragStartMouseY = nil -- Starting mouse Y position for Y-axis dragging
+local dragCurrentY = nil -- Current Y value for Y-axis dragging
+local dragCountLabel = nil -- Label showing part count
+local dragCountUpdateTick = 0 -- Throttle counter updates
+local dragShowLiveCount = false -- Toggle live counter (can cause lag)
+
+-- Create GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "BodyPartRemoverGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = plr:WaitForChild("PlayerGui")
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 350, 0, 630)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -315)
+mainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+-- Add corner radius
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+title.BorderSizePixel = 0
+title.Text = "Body Part Remover"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 18
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = title
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "CloseButton"
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -35, 0, 5)
+closeBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = mainFrame
+
+local closeBtnCorner = Instance.new("UICorner")
+closeBtnCorner.CornerRadius = UDim.new(0, 5)
+closeBtnCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+-- Player Dropdown Frame
+local dropdownFrame = Instance.new("Frame")
+dropdownFrame.Name = "DropdownFrame"
+dropdownFrame.Size = UDim2.new(1, -20, 0, 40)
+dropdownFrame.Position = UDim2.new(0, 10, 0, 50)
+dropdownFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+dropdownFrame.BorderSizePixel = 0
+dropdownFrame.Parent = mainFrame
+
+local dropdownCorner = Instance.new("UICorner")
+dropdownCorner.CornerRadius = UDim.new(0, 8)
+dropdownCorner.Parent = dropdownFrame
+
+-- Dropdown Button
+local dropdownBtn = Instance.new("TextButton")
+dropdownBtn.Name = "DropdownButton"
+dropdownBtn.Size = UDim2.new(1, -10, 1, -10)
+dropdownBtn.Position = UDim2.new(0, 5, 0, 5)
+dropdownBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+dropdownBtn.BorderSizePixel = 0
+dropdownBtn.Text = "👤 " .. plr.Name .. " (You)"
+dropdownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+dropdownBtn.TextSize = 14
+dropdownBtn.Font = Enum.Font.Gotham
+dropdownBtn.TextXAlignment = Enum.TextXAlignment.Left
+dropdownBtn.Parent = dropdownFrame
+
+local dropdownBtnCorner = Instance.new("UICorner")
+dropdownBtnCorner.CornerRadius = UDim.new(0, 6)
+dropdownBtnCorner.Parent = dropdownBtn
+
+local dropdownBtnPadding = Instance.new("UIPadding")
+dropdownBtnPadding.PaddingLeft = UDim.new(0, 10)
+dropdownBtnPadding.Parent = dropdownBtn
+
+-- Dropdown Arrow
+local dropdownArrow = Instance.new("TextLabel")
+dropdownArrow.Name = "Arrow"
+dropdownArrow.Size = UDim2.new(0, 20, 1, 0)
+dropdownArrow.Position = UDim2.new(1, -25, 0, 0)
+dropdownArrow.BackgroundTransparency = 1
+dropdownArrow.Text = "▼"
+dropdownArrow.TextColor3 = Color3.fromRGB(255, 255, 255)
+dropdownArrow.TextSize = 12
+dropdownArrow.Font = Enum.Font.Gotham
+dropdownArrow.Parent = dropdownBtn
+
+-- Dropdown List (hidden by default)
+local dropdownList = Instance.new("ScrollingFrame")
+dropdownList.Name = "DropdownList"
+dropdownList.Size = UDim2.new(1, -20, 0, 0)
+dropdownList.Position = UDim2.new(0, 10, 0, 95)
+dropdownList.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+dropdownList.BorderSizePixel = 0
+dropdownList.ScrollBarThickness = 4
+dropdownList.Visible = false
+dropdownList.ClipsDescendants = true
+dropdownList.ZIndex = 100
+dropdownList.Parent = mainFrame
+
+local dropdownListCorner = Instance.new("UICorner")
+dropdownListCorner.CornerRadius = UDim.new(0, 8)
+dropdownListCorner.Parent = dropdownList
+
+local dropdownListLayout = Instance.new("UIListLayout")
+dropdownListLayout.SortOrder = Enum.SortOrder.Name
+dropdownListLayout.Padding = UDim.new(0, 2)
+dropdownListLayout.Parent = dropdownList
+
+local dropdownListPadding = Instance.new("UIPadding")
+dropdownListPadding.PaddingTop = UDim.new(0, 5)
+dropdownListPadding.PaddingBottom = UDim.new(0, 5)
+dropdownListPadding.PaddingLeft = UDim.new(0, 5)
+dropdownListPadding.PaddingRight = UDim.new(0, 5)
+dropdownListPadding.Parent = dropdownList
+
+-- Scroll Frame for body parts
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "ScrollFrame"
+scrollFrame.Size = UDim2.new(1, -20, 1, -370)
+scrollFrame.Position = UDim2.new(0, 10, 0, 100)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 6
+scrollFrame.Parent = mainFrame
+
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 8)
+scrollCorner.Parent = scrollFrame
+
+-- UI List Layout
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 5)
+listLayout.Parent = scrollFrame
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 5)
+padding.PaddingBottom = UDim.new(0, 5)
+padding.PaddingLeft = UDim.new(0, 5)
+padding.PaddingRight = UDim.new(0, 5)
+padding.Parent = scrollFrame
+
+-- Lightsaber Mode Button (NEW!)
+local lightsaberBtn = Instance.new("TextButton")
+lightsaberBtn.Name = "LightsaberButton"
+lightsaberBtn.Size = UDim2.new(1, -20, 0, 45)
+lightsaberBtn.Position = UDim2.new(0, 10, 1, -220)
+lightsaberBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 150)
+lightsaberBtn.BorderSizePixel = 0
+lightsaberBtn.Text = "⚔️ LIGHTSABER MODE"
+lightsaberBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+lightsaberBtn.TextSize = 16
+lightsaberBtn.Font = Enum.Font.GothamBold
+lightsaberBtn.Parent = mainFrame
+
+local lightsaberBtnCorner = Instance.new("UICorner")
+lightsaberBtnCorner.CornerRadius = UDim.new(0, 6)
+lightsaberBtnCorner.Parent = lightsaberBtn
+
+-- BTools Plus Toggle Button
+local btoolsPlusBtn = Instance.new("TextButton")
+btoolsPlusBtn.Name = "BToolsPlusButton"
+btoolsPlusBtn.Size = UDim2.new(1, -20, 0, 35)
+btoolsPlusBtn.Position = UDim2.new(0, 10, 1, -165)
+btoolsPlusBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+btoolsPlusBtn.BorderSizePixel = 0
+btoolsPlusBtn.Text = "🔧 BTools Plus: OFF"
+btoolsPlusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+btoolsPlusBtn.TextSize = 13
+btoolsPlusBtn.Font = Enum.Font.GothamBold
+btoolsPlusBtn.Parent = mainFrame
+
+local btoolsPlusBtnCorner = Instance.new("UICorner")
+btoolsPlusBtnCorner.CornerRadius = UDim.new(0, 6)
+btoolsPlusBtnCorner.Parent = btoolsPlusBtn
+
+-- BTools Plus Toggle Click
+btoolsPlusBtn.MouseButton1Click:Connect(function()
+    useBToolsPlus = not useBToolsPlus
+    if useBToolsPlus then
+        btoolsPlusBtn.Text = "🔧 BTools Plus: ON"
+        btoolsPlusBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    else
+        btoolsPlusBtn.Text = "🔧 BTools Plus: OFF"
+        btoolsPlusBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    end
+end)
+
+-- Toggle Safeguard Button
+local safeguardBtn = Instance.new("TextButton")
+safeguardBtn.Name = "SafeguardButton"
+safeguardBtn.Size = UDim2.new(1, -20, 0, 35)
+safeguardBtn.Position = UDim2.new(0, 10, 1, -205)
+safeguardBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+safeguardBtn.BorderSizePixel = 0
+safeguardBtn.Text = "🛡️ Safeguard: ON"
+safeguardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+safeguardBtn.TextSize = 13
+safeguardBtn.Font = Enum.Font.GothamBold
+safeguardBtn.Parent = mainFrame
+
+local safeguardBtnCorner = Instance.new("UICorner")
+safeguardBtnCorner.CornerRadius = UDim.new(0, 6)
+safeguardBtnCorner.Parent = safeguardBtn
+
+-- Toggle Safeguard Click
+safeguardBtn.MouseButton1Click:Connect(function()
+    safeguardEnabled = not safeguardEnabled
+    if safeguardEnabled then
+        safeguardBtn.Text = "🛡️ Safeguard: ON"
+        safeguardBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        print("🛡️ Safeguard ENABLED - Whitelist and Grass protection active")
+    else
+        safeguardBtn.Text = "⚠️ Safeguard: OFF"
+        safeguardBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        print("⚠️ Safeguard DISABLED - Can now target Grass and whitelisted players!")
+    end
+end)
+
+-- Remove All Button
+local removeAllBtn = Instance.new("TextButton")
+removeAllBtn.Name = "RemoveAllButton"
+removeAllBtn.Size = UDim2.new(1, -20, 0, 40)
+removeAllBtn.Position = UDim2.new(0, 10, 1, -50)
+removeAllBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+removeAllBtn.BorderSizePixel = 0
+removeAllBtn.Text = "🔴 Remove All Parts"
+removeAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+removeAllBtn.TextSize = 14
+removeAllBtn.Font = Enum.Font.GothamBold
+removeAllBtn.Parent = mainFrame
+
+local removeAllCorner = Instance.new("UICorner")
+removeAllCorner.CornerRadius = UDim.new(0, 6)
+removeAllCorner.Parent = removeAllBtn
+
+-- Remove Accessories Button
+local removeAccessoriesBtn = Instance.new("TextButton")
+removeAccessoriesBtn.Name = "RemoveAccessoriesButton"
+removeAccessoriesBtn.Size = UDim2.new(1, -20, 0, 40)
+removeAccessoriesBtn.Position = UDim2.new(0, 10, 1, -95)
+removeAccessoriesBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+removeAccessoriesBtn.BorderSizePixel = 0
+removeAccessoriesBtn.Text = "🌐 Remove All Accessories"
+removeAccessoriesBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+removeAccessoriesBtn.TextSize = 14
+removeAccessoriesBtn.Font = Enum.Font.GothamBold
+removeAccessoriesBtn.Parent = mainFrame
+
+local removeAccessoriesCorner = Instance.new("UICorner")
+removeAccessoriesCorner.CornerRadius = UDim.new(0, 6)
+removeAccessoriesCorner.Parent = removeAccessoriesBtn
+
+-- Clone & Reset Button
+local cloneResetBtn = Instance.new("TextButton")
+cloneResetBtn.Name = "CloneResetButton"
+cloneResetBtn.Size = UDim2.new(1, -20, 0, 40)
+cloneResetBtn.Position = UDim2.new(0, 10, 1, -140)
+cloneResetBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+cloneResetBtn.BorderSizePixel = 0
+cloneResetBtn.Text = "🎭 Clone & Reset Player"
+cloneResetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+cloneResetBtn.TextSize = 14
+cloneResetBtn.Font = Enum.Font.GothamBold
+cloneResetBtn.Parent = mainFrame
+
+local cloneResetCorner = Instance.new("UICorner")
+cloneResetCorner.CornerRadius = UDim.new(0, 6)
+cloneResetCorner.Parent = cloneResetBtn
+
+-- Bulk Clone Frame
+local bulkCloneFrame = Instance.new("Frame")
+bulkCloneFrame.Name = "BulkCloneFrame"
+bulkCloneFrame.Size = UDim2.new(1, -20, 0, 45)
+bulkCloneFrame.Position = UDim2.new(0, 10, 1, -270)
+bulkCloneFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+bulkCloneFrame.BorderSizePixel = 0
+bulkCloneFrame.Parent = mainFrame
+
+local bulkCloneFrameCorner = Instance.new("UICorner")
+bulkCloneFrameCorner.CornerRadius = UDim.new(0, 6)
+bulkCloneFrameCorner.Parent = bulkCloneFrame
+
+-- Bulk Clone Input Box
+local bulkCloneInput = Instance.new("TextBox")
+bulkCloneInput.Name = "BulkCloneInput"
+bulkCloneInput.Size = UDim2.new(0, 80, 1, -10)
+bulkCloneInput.Position = UDim2.new(0, 5, 0, 5)
+bulkCloneInput.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+bulkCloneInput.BorderSizePixel = 0
+bulkCloneInput.Text = "10"
+bulkCloneInput.PlaceholderText = "Amount"
+bulkCloneInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+bulkCloneInput.TextSize = 14
+bulkCloneInput.Font = Enum.Font.Gotham
+bulkCloneInput.ClearTextOnFocus = true
+bulkCloneInput.Parent = bulkCloneFrame
+
+local bulkCloneInputCorner = Instance.new("UICorner")
+bulkCloneInputCorner.CornerRadius = UDim.new(0, 5)
+bulkCloneInputCorner.Parent = bulkCloneInput
+
+-- Bulk Clone Button
+local bulkCloneBtn = Instance.new("TextButton")
+bulkCloneBtn.Name = "BulkCloneButton"
+bulkCloneBtn.Size = UDim2.new(1, -95, 1, -10)
+bulkCloneBtn.Position = UDim2.new(0, 90, 0, 5)
+bulkCloneBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+bulkCloneBtn.BorderSizePixel = 0
+bulkCloneBtn.Text = "💥 Bulk Clone"
+bulkCloneBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+bulkCloneBtn.TextSize = 14
+bulkCloneBtn.Font = Enum.Font.GothamBold
+bulkCloneBtn.Parent = bulkCloneFrame
+
+local bulkCloneBtnCorner = Instance.new("UICorner")
+bulkCloneBtnCorner.CornerRadius = UDim.new(0, 5)
+bulkCloneBtnCorner.Parent = bulkCloneBtn
+
+-- Variable to track dropdown state
+local dropdownOpen = false
+
+-- Function to get Building Tools
+local function getBuildingTools()
+    local toolName = useBToolsPlus and "Building Tools Plus" or "Building Tools"
+    return plr.Backpack:WaitForChild(toolName, 5) or chr:FindFirstChild(toolName)
+end
+
+-- 3D Drag Selection Functions
+-- Function to get ServerEndpoint
+local function getServerEndpoint()
+    local buildingTools = getBuildingTools()
+    if not buildingTools then return nil end
+    return buildingTools:WaitForChild("SyncAPI"):WaitForChild("ServerEndpoint")
+end
+
+-- Function to check if player is whitelisted
+local function isWhitelisted(playerName)
+    for _, name in ipairs(whitelistedPlayers) do
+        if name == playerName then
+            return true
+        end
+    end
+    return false
+end
+
+local function cancelDragSelection()
+    dragSelectionActive = false
+    dragPhase = 0
+    dragStartPos = nil
+    dragCurrentPos = nil
+    dragSelectedParts = {}
+    dragLockedX = nil
+    dragLockedZ = nil
+    dragStartMouseY = nil
+    dragCurrentY = nil
+    
+    if dragSelectionBox then
+        dragSelectionBox:Destroy()
+        dragSelectionBox = nil
+    end
+    
+    if dragCountLabel then
+        dragCountLabel:Destroy()
+        dragCountLabel = nil
+    end
+    
+    print("🚫 Drag selection cancelled")
+end
+
+local function updateDragSelectionBox()
+    if not dragStartPos or not dragCurrentPos then return end
+    
+    -- Calculate bounds based on phase (ONE AXIS AT A TIME)
+    local minPos = dragStartPos
+    local maxPos = dragStartPos
+    
+    if dragPhase == 1 then
+        -- X axis only - drag from start position along X
+        maxPos = Vector3.new(dragCurrentPos.X, dragStartPos.Y, dragStartPos.Z)
+        minPos = Vector3.new(dragStartPos.X, dragStartPos.Y, dragStartPos.Z)
+    elseif dragPhase == 2 then
+        -- Z axis only - use locked X dimensions, drag along Z from start
+        local xMin = math.min(dragStartPos.X, dragLockedX or dragStartPos.X)
+        local xMax = math.max(dragStartPos.X, dragLockedX or dragStartPos.X)
+        minPos = Vector3.new(xMin, dragStartPos.Y, dragStartPos.Z)
+        maxPos = Vector3.new(xMax, dragStartPos.Y, dragCurrentPos.Z)
+    elseif dragPhase == 3 then
+        -- Y axis only - use locked X and Z dimensions, use dragCurrentY instead of raycast
+        local xMin = math.min(dragStartPos.X, dragLockedX or dragStartPos.X)
+        local xMax = math.max(dragStartPos.X, dragLockedX or dragStartPos.X)
+        local zMin = math.min(dragStartPos.Z, dragLockedZ or dragStartPos.Z)
+        local zMax = math.max(dragStartPos.Z, dragLockedZ or dragStartPos.Z)
+        local yValue = dragCurrentY or dragStartPos.Y
+        minPos = Vector3.new(xMin, dragStartPos.Y, zMin)
+        maxPos = Vector3.new(xMax, yValue, zMax)
+    end
+    
+    -- Ensure min is actually minimum and max is maximum
+    local actualMin = Vector3.new(
+        math.min(minPos.X, maxPos.X),
+        math.min(minPos.Y, maxPos.Y),
+        math.min(minPos.Z, maxPos.Z)
+    )
+    local actualMax = Vector3.new(
+        math.max(minPos.X, maxPos.X),
+        math.max(minPos.Y, maxPos.Y),
+        math.max(minPos.Z, maxPos.Z)
+    )
+    
+    -- Calculate center and size
+    local center = (actualMin + actualMax) / 2
+    local size = (actualMax - actualMin)
+    
+    -- Create or update selection box
+    if not dragSelectionBox then
+        dragSelectionBox = Instance.new("Part")
+        dragSelectionBox.Name = "DragSelectionBox"
+        dragSelectionBox.Anchored = true
+        dragSelectionBox.CanCollide = false
+        dragSelectionBox.Transparency = 0.5  -- More visible
+        dragSelectionBox.Material = Enum.Material.Neon
+        dragSelectionBox.Parent = workspace
+        
+        -- Add selection box visual
+        local selBox = Instance.new("SelectionBox")
+        selBox.LineThickness = 0.1  -- Thicker lines
+        selBox.Transparency = 0.1  -- More visible
+        selBox.Adornee = dragSelectionBox
+        selBox.Parent = dragSelectionBox
+        selBox.Color3 = Color3.fromRGB(0, 255, 255)
+        
+        -- Add part count label
+        local billboardGui = Instance.new("BillboardGui")
+        billboardGui.Name = "PartCountLabel"
+        billboardGui.Size = UDim2.new(0, 200, 0, 50)
+        billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+        billboardGui.AlwaysOnTop = true
+        billboardGui.Parent = dragSelectionBox
+        
+        dragCountLabel = Instance.new("TextLabel")
+        dragCountLabel.Size = UDim2.new(1, 0, 1, 0)
+        dragCountLabel.BackgroundTransparency = 0.3
+        dragCountLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dragCountLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        dragCountLabel.TextScaled = true
+        dragCountLabel.Font = Enum.Font.GothamBold
+        dragCountLabel.Text = "0 parts"
+        dragCountLabel.Parent = billboardGui
+        
+        print("✅ Created drag selection box with counter!")
+    end
+    
+    -- Update color based on phase
+    if dragPhase == 1 then
+        dragSelectionBox.Color = Color3.fromRGB(255, 100, 100) -- Red for X
+        dragSelectionBox:FindFirstChildOfClass("SelectionBox").Color3 = Color3.fromRGB(255, 100, 100)
+    elseif dragPhase == 2 then
+        dragSelectionBox.Color = Color3.fromRGB(100, 100, 255) -- Blue for Z
+        dragSelectionBox:FindFirstChildOfClass("SelectionBox").Color3 = Color3.fromRGB(100, 100, 255)
+    elseif dragPhase == 3 then
+        dragSelectionBox.Color = Color3.fromRGB(100, 255, 100) -- Green for Y
+        dragSelectionBox:FindFirstChildOfClass("SelectionBox").Color3 = Color3.fromRGB(100, 255, 100)
+    end
+    
+    -- Add minimum size to make box visible
+    local minSize = 0.5
+    size = Vector3.new(
+        math.max(size.X, minSize),
+        math.max(size.Y, minSize),
+        math.max(size.Z, minSize)
+    )
+    
+    dragSelectionBox.Size = size
+    dragSelectionBox.CFrame = CFrame.new(center)
+    
+    -- Update part count every 10 frames to reduce lag (only if enabled)
+    if dragShowLiveCount then
+        dragCountUpdateTick = dragCountUpdateTick + 1
+        if dragCountLabel and dragCountUpdateTick % 10 == 0 then
+            task.spawn(function()
+                local quickCount = 0
+                local min = center - size / 2
+                local max = center + size / 2
+                
+                -- Only check parts in a reasonable area (use Region3 for initial filter)
+                local region = Region3.new(min, max)
+                region = region:ExpandToGrid(4)
+                local nearbyParts = workspace:FindPartsInRegion3(region, nil, 1000) -- Limit to 1000 parts max
+                
+                for _, obj in ipairs(nearbyParts) do
+                    if obj:IsA("BasePart") and obj ~= dragSelectionBox and obj.Name ~= "DragSelectionBox" and obj.Name ~= "Grass" then
+                        local pos = obj.Position
+                        if pos.X >= min.X and pos.X <= max.X and
+                           pos.Y >= min.Y and pos.Y <= max.Y and
+                           pos.Z >= min.Z and pos.Z <= max.Z then
+                            quickCount = quickCount + 1
+                        end
+                    end
+                end
+                
+                dragCountLabel.Text = quickCount .. " parts"
+                if quickCount > 0 then
+                    dragCountLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+                else
+                    dragCountLabel.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+                end
+            end)
+        end
+    elseif dragCountLabel then
+        -- Show "Press F" message instead
+        dragCountLabel.Text = "Press F to select"
+        dragCountLabel.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+    end
+end
+
+local function getPartsInDragSelection()
+    if not dragSelectionBox then 
+        print("❌ No selection box!")
+        return {} 
+    end
+    
+    local parts = {}
+    local boxPos = dragSelectionBox.Position
+    local boxSize = dragSelectionBox.Size
+    local min = boxPos - boxSize / 2
+    local max = boxPos + boxSize / 2
+    
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("📦 SELECTION BOX:")
+    print("   Position:", boxPos)
+    print("   Size:", boxSize)
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    
+    -- Get ALL parts in workspace
+    local allParts = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            table.insert(allParts, obj)
+        end
+    end
+    
+    print("🔍 Scanning " .. #allParts .. " parts...")
+    
+    for _, part in ipairs(allParts) do
+        -- Skip the selection box itself
+        if part == dragSelectionBox or part.Name == "DragSelectionBox" then
+            continue
+        end
+        
+        -- Skip grass
+        if part.Name == "Grass" or string.find(part.Name, "Grass") then
+            continue
+        end
+        
+        -- Skip GUI parts
+        if part:IsDescendantOf(plr.PlayerGui) then
+            continue
+        end
+        
+        -- Skip camera parts
+        if part:IsDescendantOf(workspace.CurrentCamera) then
+            continue
+        end
+        
+        -- Check if part belongs to a player character
+        local partOwner = nil
+        local ancestor = part.Parent
+        while ancestor do
+            if ancestor:IsA("Model") and game.Players:GetPlayerFromCharacter(ancestor) then
+                partOwner = game.Players:GetPlayerFromCharacter(ancestor)
+                break
+            end
+            ancestor = ancestor.Parent
+        end
+        
+        -- Skip if part belongs to whitelisted player
+        if partOwner and isWhitelisted(partOwner.Name) then
+            continue
+        end
+        
+        -- Skip own character parts unless in steal mode with stealFromSelf enabled
+        if partOwner == plr then
+            if not (stealMode and stealFromSelf) then
+                continue
+            end
+        end
+        
+        -- Check if part is within bounds
+        local pos = part.Position
+        
+        local inBounds = pos.X >= min.X and pos.X <= max.X and
+                        pos.Y >= min.Y and pos.Y <= max.Y and
+                        pos.Z >= min.Z and pos.Z <= max.Z
+        
+        if inBounds then
+            table.insert(parts, part)
+        end
+    end
+    
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("✅ SELECTED " .. #parts .. " PARTS!")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    
+    return parts
+end
+
+local function finalizeDragSelection()
+    print("🎯 Finalizing drag selection...")
+    print("📦 Selection box exists:", dragSelectionBox ~= nil)
+    
+    if dragSelectionBox then
+        print("📦 Box position:", dragSelectionBox.Position)
+        print("📦 Box size:", dragSelectionBox.Size)
+    end
+    
+    dragSelectedParts = getPartsInDragSelection()
+    
+    print("✅ Selected " .. #dragSelectedParts .. " parts!")
+    
+    if #dragSelectedParts == 0 then
+        print("⚠️ No parts found in selection!")
+        print("⚠️ Make sure you're selecting actual parts in the workspace!")
+        cancelDragSelection()
+        return
+    end
+    
+    -- Process selected parts based on mode
+    print("🔧 Mode check - Steal:", stealMode, "Unanchor:", unanchorMode)
+    
+    if stealMode then
+        -- Steal all selected parts
+        print("🐀 Starting steal mode...")
+        
+        -- First, select all parts in the tool
+        local buildingTools = getBuildingTools()
+        if buildingTools then
+            local Core = buildingTools:FindFirstChild("Core")
+            if Core then
+                print("🔧 Selecting parts in Building Tools...")
+                local success = pcall(function()
+                    local Selection = require(Core).Selection
+                    
+                    -- Clear current selection
+                    for i = #Selection.Parts, 1, -1 do
+                        table.remove(Selection.Parts, i)
+                    end
+                    
+                    -- Add all parts to selection
+                    for _, part in ipairs(dragSelectedParts) do
+                        table.insert(Selection.Parts, part)
+                    end
+                    
+                    print("✅ Added " .. #dragSelectedParts .. " parts to tool selection!")
+                    print("✅ Tool now has " .. #Selection.Parts .. " parts selected!")
+                end)
+                
+                if not success then
+                    warn("⚠️ Failed to select parts in tool (might not be needed)")
+                end
+            else
+                warn("⚠️ Building Tools Core not found")
+            end
+        end
+        
+        task.spawn(function()
+            local count = 0
+            for _, part in ipairs(dragSelectedParts) do
+                print("🐀 Attempting to steal:", part.Name)
+                if stealPart(part) then
+                    count = count + 1
+                    print("✅ Stole:", part.Name)
+                else
+                    print("❌ Failed to steal:", part.Name)
+                end
+                task.wait(0.05)
+            end
+            print("🐀 FINAL: Stolen " .. count .. " parts!")
+        end)
+    elseif unanchorMode then
+        -- Unanchor all selected parts
+        print("🔓 Starting unanchor mode...")
+        task.spawn(function()
+            local serverEndpoint = getServerEndpoint()
+            if not serverEndpoint then
+                warn("❌ Building Tools ServerEndpoint not found!")
+                return
+            end
+            print("✅ ServerEndpoint found!")
+            
+            local count = 0
+            for _, part in ipairs(dragSelectedParts) do
+                if part:IsA("BasePart") or part:IsA("MeshPart") then
+                    local success = pcall(function()
+                        serverEndpoint:InvokeServer("SetProperty", part, "Anchored", false)
+                    end)
+                    if success then
+                        count = count + 1
+                        print("✅ Unanchored:", part.Name)
+                    else
+                        print("❌ Failed to unanchor:", part.Name)
+                    end
+                end
+            end
+            print("🔓 FINAL: Unanchored " .. count .. " parts!")
+        end)
+    else
+        -- Delete all selected parts
+        print("⚔️ Starting delete mode...")
+        task.spawn(function()
+            local serverEndpoint = getServerEndpoint()
+            if not serverEndpoint then
+                warn("❌ Building Tools not found!")
+                cancelDragSelection()
+                return
+            end
+            print("✅ ServerEndpoint found!")
+            print("🔄 Claiming ownership of " .. #dragSelectedParts .. " parts...")
+            
+            -- Claim ownership first
+            local claimSuccess = pcall(function()
+                local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+                local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+                EscalateEvent:FireServer(PartOwnership, dragSelectedParts)
+            end)
+            
+            if claimSuccess then
+                print("✅ Ownership claim sent!")
+            else
+                print("⚠️ Ownership claim failed (might not be needed)")
+            end
+            
+            task.wait(0.3)
+            
+            print("⚔️ Deleting parts...")
+            
+            -- Delete parts one by one with proper method
+            local deletedCount = 0
+            for _, part in ipairs(dragSelectedParts) do
+                if part and part.Parent then
+                    local success = pcall(function()
+                        -- Method 1: Group then ungroup (most reliable)
+                        local groupArgs = {
+                            "CreateGroup",
+                            "Model",
+                            workspace,
+                            {part}
+                        }
+                        serverEndpoint:InvokeServer(unpack(groupArgs))
+                        task.wait(0.03)
+                        
+                        local ungroupArgs = {
+                            "Ungroup",
+                            {part}
+                        }
+                        serverEndpoint:InvokeServer(unpack(ungroupArgs))
+                        deletedCount = deletedCount + 1
+                        print("✅ Deleted:", part.Name)
+                    end)
+                    
+                    if not success then
+                        -- Fallback: Try direct remove
+                        local fallbackSuccess = pcall(function()
+                            serverEndpoint:InvokeServer("Remove", {part})
+                            deletedCount = deletedCount + 1
+                            print("✅ Deleted (fallback):", part.Name)
+                        end)
+                        
+                        if not fallbackSuccess then
+                            print("❌ Failed to delete:", part.Name)
+                        end
+                    end
+                    
+                    task.wait(0.05)
+                end
+            end
+            
+            print("⚔️ FINAL: Deleted " .. deletedCount .. "/" .. #dragSelectedParts .. " parts!")
+        end)
+    end
+    
+    -- Clean up
+    cancelDragSelection()
+end
+
+-- Function to remove a body part
+local function removeBodyPart(part)
+    if not part or not part.Parent then
+        warn("Part not found or not in character")
+        return
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return
+    end
+    
+    -- Group the part
+    local groupArgs = {
+        "CreateGroup",
+        "Model",
+        workspace,
+        {part}
+    }
+    serverEndpoint:InvokeServer(unpack(groupArgs))
+    
+    wait(0.05)
+    
+    -- Ungroup to remove
+    local ungroupArgs = {
+        "Ungroup",
+        {part}
+    }
+    serverEndpoint:InvokeServer(unpack(ungroupArgs))
+end
+
+-- NEW: Steal part using group/ungroup exploit (from TheRat)
+local function stealPart(part)
+    if not part or not part.Parent then return false end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then return false end
+    
+    local success = false
+    pcall(function()
+        -- Step 1: Claim ownership
+        local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+        local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+        EscalateEvent:FireServer(PartOwnership, {part})
+        
+        task.wait(0.03)
+        
+        -- Step 2: Create a group (union) with the part
+        local union = serverEndpoint:InvokeServer("CreateUnion", {part})
+        
+        if union then
+            task.wait(0.01)
+            
+            -- Step 3: Ungroup (separate) - this gives us ownership
+            serverEndpoint:InvokeServer("SeparateUnion", {union})
+            
+            -- The part is now ours!
+            table.insert(stolenParts, part)
+            
+            -- Step 4: UNLOCK THE PART IMMEDIATELY (LOCALLY)
+            task.wait(0.05)
+            pcall(function()
+                part.Locked = false
+            end)
+            
+            success = true
+        end
+    end)
+    
+    return success
+end
+
+-- Function to remove entire model (for lightsaber mode)
+local function removeModel(model)
+    if not model or not model.Parent then
+        warn("Model not found")
+        return
+    end
+    
+    -- Check if it's a player character
+    local player = game.Players:GetPlayerFromCharacter(model)
+    if player and isWhitelisted(player.Name) then
+        warn("Cannot remove whitelisted player:", player.Name)
+        return
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return
+    end
+    
+    -- Group the entire model
+    local groupArgs = {
+        "CreateGroup",
+        "Model",
+        workspace,
+        {model}
+    }
+    
+    pcall(function()
+        serverEndpoint:InvokeServer(unpack(groupArgs))
+    end)
+    
+    wait(0.05)
+    
+    -- Ungroup to remove
+    local ungroupArgs = {
+        "Ungroup",
+        {model}
+    }
+    
+    pcall(function()
+        serverEndpoint:InvokeServer(unpack(ungroupArgs))
+    end)
+end
+
+-- Function to clone character (without reset)
+local function cloneCharacter(character)
+    if not character or not character.Parent then
+        warn("Character not found!")
+        return false
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return false
+    end
+    
+    -- Create a group with the entire character (clones it)
+    local cloneArgs = {
+        "CreateGroup",
+        "Model",
+        workspace,
+        {character}
+    }
+    
+    local success = pcall(function()
+        serverEndpoint:InvokeServer(unpack(cloneArgs))
+    end)
+    
+    return success
+end
+
+-- Function to clone character and reset player
+local function cloneAndResetPlayer(player, character)
+    if not character or not character.Parent then
+        warn("Character not found!")
+        return false
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return false
+    end
+    
+    -- Create a group with the entire character (clones it)
+    local cloneArgs = {
+        "CreateGroup",
+        "Model",
+        workspace,
+        {character}
+    }
+    
+    local success = pcall(function()
+        serverEndpoint:InvokeServer(unpack(cloneArgs))
+    end)
+    
+    if not success then
+        return false
+    end
+    
+    wait(0.1)
+    
+    -- Now ungroup the original character (resets them)
+    local ungroupArgs = {
+        "Ungroup",
+        {character}
+    }
+    
+    success = pcall(function()
+        serverEndpoint:InvokeServer(unpack(ungroupArgs))
+    end)
+    
+    return success
+end
+
+-- Function to clone character WITHOUT resetting (no ungroup)
+local function cloneCharacterOnly(character)
+    if not character or not character.Parent then
+        warn("Character not found!")
+        return false
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return false
+    end
+    
+    -- Create a group with the entire character (clones it)
+    local cloneArgs = {
+        "CreateGroup",
+        "Model",
+        workspace,
+        {character}
+    }
+    
+    local success = pcall(function()
+        serverEndpoint:InvokeServer(unpack(cloneArgs))
+    end)
+    
+    return success
+end
+
+-- Function to bulk clone character
+local function bulkCloneCharacter(character, amount)
+    if not character or not character.Parent then
+        warn("Character not found!")
+        return 0
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return 0
+    end
+    
+    local successCount = 0
+    
+    for i = 1, amount do
+        local cloneArgs = {
+            "CreateGroup",
+            "Model",
+            workspace,
+            {character}
+        }
+        
+        local success = pcall(function()
+            serverEndpoint:InvokeServer(unpack(cloneArgs))
+        end)
+        
+        if success then
+            successCount = successCount + 1
+        end
+        
+        wait(0.05)
+    end
+    
+    return successCount
+end
+
+-- Function to remove accessories
+local function removeAccessories(character)
+    if not character or not character.Parent then
+        warn("Character not found!")
+        return 0
+    end
+    
+    local serverEndpoint = getServerEndpoint()
+    if not serverEndpoint then
+        warn("Building Tools not found!")
+        return 0
+    end
+    
+    local count = 0
+    
+    -- Find all accessories
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("Accessory") then
+            -- Group the accessory
+            local groupArgs = {
+                "CreateGroup",
+                "Model",
+                workspace,
+                {child}
+            }
+            
+            pcall(function()
+                serverEndpoint:InvokeServer(unpack(groupArgs))
+            end)
+            
+            wait(0.05)
+            
+            -- Ungroup to remove
+            local ungroupArgs = {
+                "Ungroup",
+                {child}
+            }
+            
+            pcall(function()
+                serverEndpoint:InvokeServer(unpack(ungroupArgs))
+            end)
+            
+            count = count + 1
+            wait(0.05)
+        end
+    end
+    
+    return count
+end
+
+-- Function to clear all body part buttons
+local function clearBodyPartButtons()
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+end
+
+-- Function to create a button for each body part
+local function createPartButton(partName, character)
+    local button = Instance.new("TextButton")
+    button.Name = partName .. "Button"
+    button.Size = UDim2.new(1, -10, 0, 35)
+    button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    button.BorderSizePixel = 0
+    button.Text = "Remove " .. partName
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.Gotham
+    button.Parent = scrollFrame
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = button
+    
+    button.MouseButton1Click:Connect(function()
+        task.spawn(function()
+            if selectedMode == "self" then
+                -- Single player mode
+                local currentPart = character:FindFirstChild(partName)
+                if currentPart then
+                    removeBodyPart(currentPart)
+                    button.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+                    button.Text = partName .. " (Removed)"
+                    wait(2)
+                    button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                    button.Text = "Remove " .. partName
+                end
+            elseif selectedMode == "other" then
+                -- Other mode: Remove part from all players except local player
+                button.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+                button.Text = "Removing..."
+                local count = 0
+                
+                for _, player in ipairs(game.Players:GetPlayers()) do
+                    if player ~= plr then
+                        local success, char = pcall(function()
+                            return player.Character
+                        end)
+                        
+                        if success and char then
+                            local part = char:FindFirstChild(partName)
+                            if part then
+                                removeBodyPart(part)
+                                count = count + 1
+                                task.wait(0.1)
+                            end
+                        end
+                    end
+                end
+                
+                button.Text = "Removed from " .. count .. " players"
+                wait(2)
+                button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                button.Text = "Remove " .. partName
+            elseif selectedMode == "everyone" then
+                -- Everyone mode: Remove part from ALL players including local player
+                button.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+                button.Text = "Removing..."
+                local count = 0
+                
+                for _, player in ipairs(game.Players:GetPlayers()) do
+                    local success, char = pcall(function()
+                        return player.Character
+                    end)
+                    
+                    if success and char then
+                        local part = char:FindFirstChild(partName)
+                        if part then
+                            removeBodyPart(part)
+                            count = count + 1
+                            task.wait(0.1)
+                        end
+                    end
+                end
+                
+                button.Text = "Removed from " .. count .. " players"
+                wait(2)
+                button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                button.Text = "Remove " .. partName
+            end
+        end)
+    end)
+end
+
+-- Function to populate body part buttons
+local function populateBodyParts(character)
+    clearBodyPartButtons()
+    
+    -- List of body parts to check (R6 and R15)
+    local bodyParts = {
+        "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+        "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+        "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg",
+        "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"
+    }
+    
+    for _, partName in ipairs(bodyParts) do
+        if character:FindFirstChild(partName) then
+            createPartButton(partName, character)
+        end
+    end
+    
+    -- Update canvas size
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
+end
+
+-- Function to update player dropdown
+local function updatePlayerDropdown()
+    -- Clear existing buttons
+    for _, child in ipairs(dropdownList:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    
+    -- Add "Everyone" option (first)
+    local everyoneBtn = Instance.new("TextButton")
+    everyoneBtn.Name = "Everyone"
+    everyoneBtn.Size = UDim2.new(1, -10, 0, 35)
+    everyoneBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    everyoneBtn.BorderSizePixel = 0
+    everyoneBtn.Text = "🌍 EVERYONE (All Players)"
+    everyoneBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    everyoneBtn.TextSize = 14
+    everyoneBtn.Font = Enum.Font.GothamBold
+    everyoneBtn.TextXAlignment = Enum.TextXAlignment.Left
+    everyoneBtn.ZIndex = 101
+    everyoneBtn.Parent = dropdownList
+    
+    local everyoneBtnCorner = Instance.new("UICorner")
+    everyoneBtnCorner.CornerRadius = UDim.new(0, 5)
+    everyoneBtnCorner.Parent = everyoneBtn
+    
+    local everyoneBtnPadding = Instance.new("UIPadding")
+    everyoneBtnPadding.PaddingLeft = UDim.new(0, 10)
+    everyoneBtnPadding.Parent = everyoneBtn
+    
+    everyoneBtn.MouseButton1Click:Connect(function()
+        selectedMode = "everyone"
+        selectedPlayer = nil
+        selectedCharacter = nil
+        
+        dropdownBtn.Text = "🌍 EVERYONE (All Players)"
+        dropdownBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        
+        -- Show all possible body parts (R6 + R15)
+        clearBodyPartButtons()
+        local allBodyParts = {
+            "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+            "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg",
+            "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"
+        }
+        
+        for _, partName in ipairs(allBodyParts) do
+            createPartButton(partName, nil)
+        end
+        
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
+        
+        dropdownList.Visible = false
+        dropdownOpen = false
+        
+        print("Selected mode: EVERYONE")
+    end)
+    
+    -- Add "Other" option (second)
+    local otherBtn = Instance.new("TextButton")
+    otherBtn.Name = "Other"
+    otherBtn.Size = UDim2.new(1, -10, 0, 35)
+    otherBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+    otherBtn.BorderSizePixel = 0
+    otherBtn.Text = "👥 OTHER (All Except You)"
+    otherBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    otherBtn.TextSize = 14
+    otherBtn.Font = Enum.Font.GothamBold
+    otherBtn.TextXAlignment = Enum.TextXAlignment.Left
+    otherBtn.ZIndex = 101
+    otherBtn.Parent = dropdownList
+    
+    local otherBtnCorner = Instance.new("UICorner")
+    otherBtnCorner.CornerRadius = UDim.new(0, 5)
+    otherBtnCorner.Parent = otherBtn
+    
+    local otherBtnPadding = Instance.new("UIPadding")
+    otherBtnPadding.PaddingLeft = UDim.new(0, 10)
+    otherBtnPadding.Parent = otherBtn
+    
+    otherBtn.MouseButton1Click:Connect(function()
+        selectedMode = "other"
+        selectedPlayer = nil
+        selectedCharacter = nil
+        
+        dropdownBtn.Text = "👥 OTHER (All Except You)"
+        dropdownBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+        
+        -- Show all possible body parts (R6 + R15)
+        clearBodyPartButtons()
+        local allBodyParts = {
+            "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+            "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg",
+            "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"
+        }
+        
+        for _, partName in ipairs(allBodyParts) do
+            createPartButton(partName, nil)
+        end
+        
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
+        
+        dropdownList.Visible = false
+        dropdownOpen = false
+        
+        print("Selected mode: OTHER")
+    end)
+    
+    -- Add all players
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        local playerBtn = Instance.new("TextButton")
+        playerBtn.Name = player.Name
+        playerBtn.Size = UDim2.new(1, -10, 0, 30)
+        playerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        playerBtn.BorderSizePixel = 0
+        playerBtn.Text = player.Name .. (player == plr and " (You)" or "")
+        playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playerBtn.TextSize = 13
+        playerBtn.Font = Enum.Font.Gotham
+        playerBtn.TextXAlignment = Enum.TextXAlignment.Left
+        playerBtn.ZIndex = 101
+        playerBtn.Parent = dropdownList
+        
+        local playerBtnCorner = Instance.new("UICorner")
+        playerBtnCorner.CornerRadius = UDim.new(0, 5)
+        playerBtnCorner.Parent = playerBtn
+        
+        local playerBtnPadding = Instance.new("UIPadding")
+        playerBtnPadding.PaddingLeft = UDim.new(0, 10)
+        playerBtnPadding.Parent = playerBtn
+        
+        playerBtn.MouseButton1Click:Connect(function()
+            selectedMode = "self"
+            selectedPlayer = player
+            selectedCharacter = player.Character
+            
+            -- Wait for character if it doesn't exist
+            if not selectedCharacter then
+                selectedCharacter = player.CharacterAdded:Wait()
+            end
+            
+            dropdownBtn.Text = "👤 " .. player.Name .. (player == plr and " (You)" or "")
+            dropdownBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            populateBodyParts(selectedCharacter)
+            dropdownList.Visible = false
+            dropdownOpen = false
+            
+            print("Selected player:", player.Name, "Character:", selectedCharacter)
+        end)
+    end
+    
+    -- Update canvas size
+    dropdownList.CanvasSize = UDim2.new(0, 0, 0, dropdownListLayout.AbsoluteContentSize.Y + 10)
+end
+
+-- Dropdown toggle
+dropdownBtn.MouseButton1Click:Connect(function()
+    dropdownOpen = not dropdownOpen
+    
+    if dropdownOpen then
+        -- Update player list first
+        updatePlayerDropdown()
+        
+        -- Make visible and tween size
+        dropdownList.Visible = true
+        dropdownList.Size = UDim2.new(1, -20, 0, 0)
+        dropdownList:TweenSize(
+            UDim2.new(1, -20, 0, math.min(150, dropdownListLayout.AbsoluteContentSize.Y + 10)), 
+            Enum.EasingDirection.Out, 
+            Enum.EasingStyle.Quad, 
+            0.2, 
+            true
+        )
+    else
+        -- Tween to zero then hide
+        dropdownList:TweenSize(
+            UDim2.new(1, -20, 0, 0), 
+            Enum.EasingDirection.Out, 
+            Enum.EasingStyle.Quad, 
+            0.2, 
+            true, 
+            function()
+                dropdownList.Visible = false
+            end
+        )
+    end
+end)
+
+-- Remove All Button
+removeAllBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        removeAllBtn.Text = "Removing..."
+        removeAllBtn.BackgroundColor3 = Color3.fromRGB(150, 30, 30)
+        
+        -- List of body parts to remove
+        local bodyParts = {
+            "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+            "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg",
+            "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"
+        }
+        
+        local totalCount = 0
+        
+        if selectedMode == "everyone" then
+            -- Remove from ALL players
+            print("🌍 Removing from EVERYONE...")
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                local character = player.Character
+                if character then
+                    for _, partName in ipairs(bodyParts) do
+                        local part = character:FindFirstChild(partName)
+                        if part then
+                            removeBodyPart(part)
+                            totalCount = totalCount + 1
+                            wait(0.05)
+                        end
+                    end
+                end
+            end
+        elseif selectedMode == "other" then
+            -- Remove from all EXCEPT yourself
+            print("👥 Removing from OTHER players...")
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= plr then
+                    local character = player.Character
+                    if character then
+                        for _, partName in ipairs(bodyParts) do
+                            local part = character:FindFirstChild(partName)
+                            if part then
+                                removeBodyPart(part)
+                                totalCount = totalCount + 1
+                                wait(0.05)
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            -- Remove from selected player only
+            if selectedCharacter then
+                for _, partName in ipairs(bodyParts) do
+                    local part = selectedCharacter:FindFirstChild(partName)
+                    if part then
+                        removeBodyPart(part)
+                        totalCount = totalCount + 1
+                        wait(0.05)
+                    end
+                end
+            end
+        end
+        
+        removeAllBtn.Text = "Removed " .. totalCount .. " parts!"
+        wait(2)
+        removeAllBtn.Text = "🔴 Remove All Parts"
+        removeAllBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    end)
+end)
+
+-- Remove Accessories Button
+removeAccessoriesBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        removeAccessoriesBtn.Text = "Removing..."
+        removeAccessoriesBtn.BackgroundColor3 = Color3.fromRGB(150, 70, 30)
+        
+        local totalCount = 0
+        
+        if selectedMode == "everyone" then
+            -- Remove from ALL players
+            print("🌍 Removing accessories from EVERYONE...")
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                local character = player.Character
+                if character then
+                    totalCount = totalCount + removeAccessories(character)
+                end
+            end
+        elseif selectedMode == "other" then
+            -- Remove from all EXCEPT yourself
+            print("👥 Removing accessories from OTHER players...")
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= plr then
+                    local character = player.Character
+                    if character then
+                        totalCount = totalCount + removeAccessories(character)
+                    end
+                end
+            end
+        else
+            -- Remove from selected player only
+            if selectedCharacter then
+                totalCount = removeAccessories(selectedCharacter)
+            end
+        end
+        
+        removeAccessoriesBtn.Text = "Removed " .. totalCount .. " accessories!"
+        wait(2)
+        removeAccessoriesBtn.Text = "🌐 Remove All Accessories"
+        removeAccessoriesBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+    end)
+end)
+
+-- Clone & Reset Button
+cloneResetBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        cloneResetBtn.Text = "Cloning..."
+        cloneResetBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 150)
+        
+        if selectedMode == "self" then
+            -- Single player mode
+            local success = cloneAndResetPlayer(selectedPlayer, selectedCharacter)
+            
+            if success then
+                cloneResetBtn.Text = "Clone Created!"
+            else
+                cloneResetBtn.Text = "Clone Failed!"
+            end
+        elseif selectedMode == "other" then
+            -- Other mode: Clone all players except local player
+            local successCount = 0
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= plr then
+                    local success, character = pcall(function()
+                        return player.Character
+                    end)
+                    
+                    if success and character then
+                        statusLabel.Text = "Cloning player: " .. player.Name
+                        local cloneSuccess = cloneAndResetPlayer(player, character)
+                        if cloneSuccess then
+                            successCount = successCount + 1
+                        end
+                        task.wait(0.1)
+                    end
+                end
+            end
+            cloneResetBtn.Text = "Cloned " .. successCount .. " players!"
+        elseif selectedMode == "everyone" then
+            -- Everyone mode: Clone ALL players including local player
+            local successCount = 0
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                local success, character = pcall(function()
+                    return player.Character
+                end)
+                
+                if success and character then
+                    statusLabel.Text = "Cloning player: " .. player.Name
+                    local cloneSuccess
+                    
+                    -- Don't reset local player (use clone-only function)
+                    if player == plr then
+                        cloneSuccess = cloneCharacterOnly(character)
+                    else
+                        cloneSuccess = cloneAndResetPlayer(player, character)
+                    end
+                    
+                    if cloneSuccess then
+                        successCount = successCount + 1
+                    end
+                    task.wait(0.1)
+                end
+            end
+            cloneResetBtn.Text = "Cloned " .. successCount .. " players!"
+        end
+        
+        wait(2)
+        cloneResetBtn.Text = "🎭 Clone & Reset Player"
+        cloneResetBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+        statusLabel.Text = "Ready"
+    end)
+end)
+
+-- Bulk Clone Button
+bulkCloneBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local amount = tonumber(bulkCloneInput.Text) or 10
+        if amount < 1 then amount = 1 end
+        if amount > 100 then amount = 100 end
+        
+        bulkCloneBtn.Text = "Cloning..."
+        bulkCloneBtn.BackgroundColor3 = Color3.fromRGB(70, 30, 150)
+        
+        if selectedMode == "self" then
+            -- Single player mode
+            local count = bulkCloneCharacter(selectedCharacter, amount)
+            bulkCloneBtn.Text = "Created " .. count .. " clones!"
+        elseif selectedMode == "other" then
+            -- Other mode: Bulk clone all players except local player
+            local totalCount = 0
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= plr then
+                    local success, character = pcall(function()
+                        return player.Character
+                    end)
+                    
+                    if success and character then
+                        statusLabel.Text = "Bulk cloning: " .. player.Name
+                        local count = bulkCloneCharacter(character, amount)
+                        totalCount = totalCount + count
+                        task.wait(0.1)
+                    end
+                end
+            end
+            bulkCloneBtn.Text = "Created " .. totalCount .. " clones!"
+        elseif selectedMode == "everyone" then
+            -- Everyone mode: Bulk clone ALL players including local player
+            local totalCount = 0
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                local success, character = pcall(function()
+                    return player.Character
+                end)
+                
+                if success and character then
+                    statusLabel.Text = "Bulk cloning: " .. player.Name
+                    local count = bulkCloneCharacter(character, amount)
+                    totalCount = totalCount + count
+                    task.wait(0.1)
+                end
+            end
+            bulkCloneBtn.Text = "Created " .. totalCount .. " clones!"
+        end
+        
+        wait(2)
+        bulkCloneBtn.Text = "💥 Bulk Clone"
+        bulkCloneBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+        statusLabel.Text = "Ready"
+    end)
+end)
+
+-- ========================================
+-- LIGHTSABER MODE GUI (SECOND DRAGGABLE GUI)
+-- ========================================
+
+local function createLightsaberGUI()
+    -- Create second GUI frame
+    lightsaberGui = Instance.new("Frame")
+    lightsaberGui.Name = "LightsaberModeGUI"
+    lightsaberGui.Size = UDim2.new(0, 300, 0, 650)
+    lightsaberGui.Position = UDim2.new(0.5, 200, 0.5, -325)
+    lightsaberGui.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    lightsaberGui.BorderSizePixel = 0
+    lightsaberGui.Active = true
+    lightsaberGui.Draggable = true
+    lightsaberGui.Visible = false
+    lightsaberGui.Parent = screenGui
+    
+    local lightsaberCorner = Instance.new("UICorner")
+    lightsaberCorner.CornerRadius = UDim.new(0, 10)
+    lightsaberCorner.Parent = lightsaberGui
+    
+    -- Title
+    local lightsaberTitle = Instance.new("TextLabel")
+    lightsaberTitle.Name = "Title"
+    lightsaberTitle.Size = UDim2.new(1, 0, 0, 40)
+    lightsaberTitle.BackgroundColor3 = Color3.fromRGB(255, 50, 150)
+    lightsaberTitle.BorderSizePixel = 0
+    lightsaberTitle.Text = "⚔️ LIGHTSABER MODE"
+    lightsaberTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lightsaberTitle.TextSize = 16
+    lightsaberTitle.Font = Enum.Font.GothamBold
+    lightsaberTitle.Parent = lightsaberGui
+    
+    local lightsaberTitleCorner = Instance.new("UICorner")
+    lightsaberTitleCorner.CornerRadius = UDim.new(0, 10)
+    lightsaberTitleCorner.Parent = lightsaberTitle
+    
+    -- Close Button
+    local lightsaberCloseBtn = Instance.new("TextButton")
+    lightsaberCloseBtn.Name = "CloseButton"
+    lightsaberCloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    lightsaberCloseBtn.Position = UDim2.new(1, -35, 0, 5)
+    lightsaberCloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    lightsaberCloseBtn.BorderSizePixel = 0
+    lightsaberCloseBtn.Text = "X"
+    lightsaberCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lightsaberCloseBtn.TextSize = 14
+    lightsaberCloseBtn.Font = Enum.Font.GothamBold
+    lightsaberCloseBtn.Parent = lightsaberGui
+    
+    local lightsaberCloseBtnCorner = Instance.new("UICorner")
+    lightsaberCloseBtnCorner.CornerRadius = UDim.new(0, 5)
+    lightsaberCloseBtnCorner.Parent = lightsaberCloseBtn
+    
+    -- Status Label
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Size = UDim2.new(1, -20, 0, 30)
+    statusLabel.Position = UDim2.new(0, 10, 0, 50)
+    statusLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    statusLabel.BorderSizePixel = 0
+    statusLabel.Text = "🔴 INACTIVE - Click Activate!"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    statusLabel.TextSize = 14
+    statusLabel.Font = Enum.Font.GothamBold
+    statusLabel.Parent = lightsaberGui
+    
+    local statusLabelCorner = Instance.new("UICorner")
+    statusLabelCorner.CornerRadius = UDim.new(0, 6)
+    statusLabelCorner.Parent = statusLabel
+    
+    -- Activate/Deactivate Button
+    local toggleSelectionBtn = Instance.new("TextButton")
+    toggleSelectionBtn.Name = "ToggleSelectionButton"
+    toggleSelectionBtn.Size = UDim2.new(1, -20, 0, 45)
+    toggleSelectionBtn.Position = UDim2.new(0, 10, 0, 90)
+    toggleSelectionBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    toggleSelectionBtn.BorderSizePixel = 0
+    toggleSelectionBtn.Text = "🟢 ACTIVATE"
+    toggleSelectionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleSelectionBtn.TextSize = 16
+    toggleSelectionBtn.Font = Enum.Font.GothamBold
+    toggleSelectionBtn.Parent = lightsaberGui
+    
+    local toggleSelectionBtnCorner = Instance.new("UICorner")
+    toggleSelectionBtnCorner.CornerRadius = UDim.new(0, 6)
+    toggleSelectionBtnCorner.Parent = toggleSelectionBtn
+    
+    -- Unselect Button (clears current selection but keeps mode active)
+    local unselectBtn = Instance.new("TextButton")
+    unselectBtn.Name = "UnselectButton"
+    unselectBtn.Size = UDim2.new(1, -20, 0, 35)
+    unselectBtn.Position = UDim2.new(0, 10, 0, 145)
+    unselectBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 50)
+    unselectBtn.BorderSizePixel = 0
+    unselectBtn.Text = "🔄 Unselect (Keep Mode On)"
+    unselectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    unselectBtn.TextSize = 13
+    unselectBtn.Font = Enum.Font.GothamBold
+    unselectBtn.Parent = lightsaberGui
+    
+    local unselectBtnCorner = Instance.new("UICorner")
+    unselectBtnCorner.CornerRadius = UDim.new(0, 6)
+    unselectBtnCorner.Parent = unselectBtn
+    
+    -- Toggle SelectionBox Button
+    local toggleBoxBtn = Instance.new("TextButton")
+    toggleBoxBtn.Name = "ToggleBoxButton"
+    toggleBoxBtn.Size = UDim2.new(1, -20, 0, 35)
+    toggleBoxBtn.Position = UDim2.new(0, 10, 0, 190)
+    toggleBoxBtn.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+    toggleBoxBtn.BorderSizePixel = 0
+    toggleBoxBtn.Text = "👁️ Hide SelectionBox"
+    toggleBoxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBoxBtn.TextSize = 13
+    toggleBoxBtn.Font = Enum.Font.GothamBold
+    toggleBoxBtn.Parent = lightsaberGui
+    
+    local toggleBoxBtnCorner = Instance.new("UICorner")
+    toggleBoxBtnCorner.CornerRadius = UDim.new(0, 6)
+    toggleBoxBtnCorner.Parent = toggleBoxBtn
+    
+    -- Info Label (replaces delete button since it auto-deletes)
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "InfoLabel"
+    infoLabel.Size = UDim2.new(1, -20, 0, 50)
+    infoLabel.Position = UDim2.new(0, 10, 0, 235)
+    infoLabel.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    infoLabel.BorderSizePixel = 0
+    infoLabel.Text = "⚔️ DELETE: Click to remove!\n🔓 UNANCHOR: Click to unanchor!"
+    infoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    infoLabel.TextSize = 12
+    infoLabel.Font = Enum.Font.GothamBold
+    infoLabel.Parent = lightsaberGui
+    
+    local infoLabelCorner = Instance.new("UICorner")
+    infoLabelCorner.CornerRadius = UDim.new(0, 6)
+    infoLabelCorner.Parent = infoLabel
+    
+    -- Steal Mode Button (NEW!)
+    local stealModeBtn = Instance.new("TextButton")
+    stealModeBtn.Name = "StealModeButton"
+    stealModeBtn.Size = UDim2.new(1, -20, 0, 40)
+    stealModeBtn.Position = UDim2.new(0, 10, 0, 295)
+    stealModeBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+    stealModeBtn.BorderSizePixel = 0
+    stealModeBtn.Text = "🐀 STEAL MODE: OFF"
+    stealModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    stealModeBtn.TextSize = 13
+    stealModeBtn.Font = Enum.Font.GothamBold
+    stealModeBtn.Parent = lightsaberGui
+    
+    local stealModeBtnCorner = Instance.new("UICorner")
+    stealModeBtnCorner.CornerRadius = UDim.new(0, 6)
+    stealModeBtnCorner.Parent = stealModeBtn
+    
+    -- Steal Mode Button Click
+    stealModeBtn.MouseButton1Click:Connect(function()
+        stealMode = not stealMode
+        if stealMode then
+            stealModeBtn.Text = "🐀 STEAL MODE: ON"
+            stealModeBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+            infoLabel.Text = "🐀 STEAL: Click to steal!\n🔓 Parts auto-unlock!"
+            infoLabel.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+        else
+            stealModeBtn.Text = "🐀 STEAL MODE: OFF"
+            stealModeBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+            infoLabel.Text = "⚔️ DELETE: Click to remove!\n🔓 UNANCHOR: Click to unanchor!"
+            infoLabel.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        end
+    end)
+    
+    -- Steal From Self Toggle Button (NEW!)
+    local stealSelfBtn = Instance.new("TextButton")
+    stealSelfBtn.Name = "StealSelfButton"
+    stealSelfBtn.Size = UDim2.new(1, -20, 0, 35)
+    stealSelfBtn.Position = UDim2.new(0, 10, 0, 345)
+    stealSelfBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    stealSelfBtn.BorderSizePixel = 0
+    stealSelfBtn.Text = "🔄 Steal From Self: OFF"
+    stealSelfBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    stealSelfBtn.TextSize = 12
+    stealSelfBtn.Font = Enum.Font.GothamBold
+    stealSelfBtn.Parent = lightsaberGui
+    
+    local stealSelfBtnCorner = Instance.new("UICorner")
+    stealSelfBtnCorner.CornerRadius = UDim.new(0, 6)
+    stealSelfBtnCorner.Parent = stealSelfBtn
+    
+    -- Steal From Self Button Click
+    stealSelfBtn.MouseButton1Click:Connect(function()
+        stealFromSelf = not stealFromSelf
+        if stealFromSelf then
+            stealSelfBtn.Text = "🔄 Steal From Self: ON"
+            stealSelfBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 200)
+        else
+            stealSelfBtn.Text = "🔄 Steal From Self: OFF"
+            stealSelfBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        end
+    end)
+    
+    -- Select Self Button (Quick test button)
+    local selectSelfBtn = Instance.new("TextButton")
+    selectSelfBtn.Name = "SelectSelfButton"
+    selectSelfBtn.Size = UDim2.new(1, -20, 0, 35)
+    selectSelfBtn.Position = UDim2.new(0, 10, 0, 390)
+    selectSelfBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    selectSelfBtn.BorderSizePixel = 0
+    selectSelfBtn.Text = "👤 SELECT SELF (Test)"
+    selectSelfBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    selectSelfBtn.TextSize = 12
+    selectSelfBtn.Font = Enum.Font.GothamBold
+    selectSelfBtn.Parent = lightsaberGui
+    
+    local selectSelfBtnCorner = Instance.new("UICorner")
+    selectSelfBtnCorner.CornerRadius = UDim.new(0, 6)
+    selectSelfBtnCorner.Parent = selectSelfBtn
+    
+    -- Select Self Button Click
+    selectSelfBtn.MouseButton1Click:Connect(function()
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("👤 SELECT SELF - Testing selection...")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        
+        if not chr then
+            warn("❌ Character not found!")
+            return
+        end
+        
+        -- Get all character parts
+        local charParts = {}
+        for _, part in ipairs(chr:GetDescendants()) do
+            if part:IsA("BasePart") then
+                table.insert(charParts, part)
+            end
+        end
+        
+        print("📊 Found " .. #charParts .. " parts in your character")
+        
+        if #charParts == 0 then
+            warn("❌ No parts found in character!")
+            return
+        end
+        
+        -- Set them as selected parts
+        dragSelectedParts = charParts
+        
+        print("✅ Selected " .. #dragSelectedParts .. " parts!")
+        print("🔧 Mode - Steal:", stealMode, "Unanchor:", unanchorMode)
+        
+        -- Process based on mode
+        if stealMode then
+            print("🐀 Starting steal mode on self...")
+            
+            -- First, select all parts in the tool
+            local buildingTools = getBuildingTools()
+            if buildingTools then
+                local Core = buildingTools:FindFirstChild("Core")
+                if Core then
+                    print("🔧 Selecting parts in Building Tools...")
+                    local success = pcall(function()
+                        local Selection = require(Core).Selection
+                        
+                        -- Clear current selection
+                        for i = #Selection.Parts, 1, -1 do
+                            table.remove(Selection.Parts, i)
+                        end
+                        
+                        -- Add all parts to selection
+                        for _, part in ipairs(dragSelectedParts) do
+                            table.insert(Selection.Parts, part)
+                        end
+                        
+                        print("✅ Added " .. #dragSelectedParts .. " parts to tool selection!")
+                        print("✅ Tool now has " .. #Selection.Parts .. " parts selected!")
+                    end)
+                    
+                    if not success then
+                        warn("⚠️ Failed to select parts in tool (might not be needed)")
+                    end
+                else
+                    warn("⚠️ Building Tools Core not found")
+                end
+            end
+            
+            task.spawn(function()
+                local count = 0
+                for _, part in ipairs(dragSelectedParts) do
+                    print("🐀 Attempting to steal:", part.Name)
+                    if stealPart(part) then
+                        count = count + 1
+                        print("✅ Stole:", part.Name)
+                    else
+                        print("❌ Failed to steal:", part.Name)
+                    end
+                    task.wait(0.05)
+                end
+                print("🐀 FINAL: Stolen " .. count .. " parts!")
+            end)
+        elseif unanchorMode then
+            print("🔓 Starting unanchor mode on self...")
+            task.spawn(function()
+                local serverEndpoint = getServerEndpoint()
+                if not serverEndpoint then
+                    warn("❌ Building Tools ServerEndpoint not found!")
+                    return
+                end
+                print("✅ ServerEndpoint found!")
+                
+                local count = 0
+                for _, part in ipairs(dragSelectedParts) do
+                    if part:IsA("BasePart") or part:IsA("MeshPart") then
+                        local success = pcall(function()
+                            serverEndpoint:InvokeServer("SetProperty", part, "Anchored", false)
+                        end)
+                        if success then
+                            count = count + 1
+                            print("✅ Unanchored:", part.Name)
+                        else
+                            print("❌ Failed to unanchor:", part.Name)
+                        end
+                    end
+                end
+                print("🔓 FINAL: Unanchored " .. count .. " parts!")
+            end)
+        else
+            print("⚔️ Starting delete mode on self...")
+            task.spawn(function()
+                local serverEndpoint = getServerEndpoint()
+                if not serverEndpoint then
+                    warn("❌ Building Tools not found!")
+                    return
+                end
+                print("✅ ServerEndpoint found!")
+                print("🔄 Claiming ownership of " .. #dragSelectedParts .. " parts...")
+                
+                -- Claim ownership first
+                local claimSuccess = pcall(function()
+                    local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+                    local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+                    EscalateEvent:FireServer(PartOwnership, dragSelectedParts)
+                end)
+                
+                if claimSuccess then
+                    print("✅ Ownership claim sent!")
+                else
+                    print("⚠️ Ownership claim failed (might not be needed)")
+                end
+                
+                task.wait(0.3)
+                
+                print("⚔️ Deleting parts...")
+                
+                -- Delete parts one by one
+                local deletedCount = 0
+                for _, part in ipairs(dragSelectedParts) do
+                    if part and part.Parent then
+                        local success = pcall(function()
+                            -- Method 1: Group then ungroup
+                            local groupArgs = {
+                                "CreateGroup",
+                                "Model",
+                                workspace,
+                                {part}
+                            }
+                            serverEndpoint:InvokeServer(unpack(groupArgs))
+                            task.wait(0.03)
+                            
+                            local ungroupArgs = {
+                                "Ungroup",
+                                {part}
+                            }
+                            serverEndpoint:InvokeServer(unpack(ungroupArgs))
+                            deletedCount = deletedCount + 1
+                            print("✅ Deleted:", part.Name)
+                        end)
+                        
+                        if not success then
+                            -- Fallback: Try direct remove
+                            local fallbackSuccess = pcall(function()
+                                serverEndpoint:InvokeServer("Remove", {part})
+                                deletedCount = deletedCount + 1
+                                print("✅ Deleted (fallback):", part.Name)
+                            end)
+                            
+                            if not fallbackSuccess then
+                                print("❌ Failed to delete:", part.Name)
+                            end
+                        end
+                        
+                        task.wait(0.05)
+                    end
+                end
+                
+                print("⚔️ FINAL: Deleted " .. deletedCount .. "/" .. #dragSelectedParts .. " parts!")
+            end)
+        end
+    end)
+    
+    -- 3D Drag Selection Toggle Button
+    local dragSelectionBtn = Instance.new("TextButton")
+    dragSelectionBtn.Name = "DragSelectionButton"
+    dragSelectionBtn.Size = UDim2.new(1, -20, 0, 35)
+    dragSelectionBtn.Position = UDim2.new(0, 10, 0, 430)
+    dragSelectionBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    dragSelectionBtn.BorderSizePixel = 0
+    dragSelectionBtn.Text = "📦 3D Drag Select: OFF"
+    dragSelectionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dragSelectionBtn.TextSize = 12
+    dragSelectionBtn.Font = Enum.Font.GothamBold
+    dragSelectionBtn.Parent = lightsaberGui
+    
+    local dragSelectionBtnCorner = Instance.new("UICorner")
+    dragSelectionBtnCorner.CornerRadius = UDim.new(0, 6)
+    dragSelectionBtnCorner.Parent = dragSelectionBtn
+    
+    -- Drag Selection Button Click
+    dragSelectionBtn.MouseButton1Click:Connect(function()
+        dragSelectionMode = not dragSelectionMode
+        if dragSelectionMode then
+            dragSelectionBtn.Text = "📦 3D Drag Select: ON"
+            dragSelectionBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+            infoLabel.Text = "📦 Click to start drag selection!\nX→Z→Y (UP/DOWN). Press F to finish, ] to cancel"
+            infoLabel.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+        else
+            dragSelectionBtn.Text = "📦 3D Drag Select: OFF"
+            dragSelectionBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            -- Restore original info label
+            if stealMode then
+                infoLabel.Text = "🐀 STEAL: Click to steal!\n🔓 Parts auto-unlock!"
+                infoLabel.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            else
+                infoLabel.Text = "⚔️ DELETE: Click to remove!\n🔓 UNANCHOR: Click to unanchor!"
+                infoLabel.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+            end
+            -- Cancel any active drag selection
+            cancelDragSelection()
+        end
+    end)
+    
+    -- Live Counter Toggle Button (for drag selection)
+    local liveCounterBtn = Instance.new("TextButton")
+    liveCounterBtn.Name = "LiveCounterButton"
+    liveCounterBtn.Size = UDim2.new(1, -20, 0, 30)
+    liveCounterBtn.Position = UDim2.new(0, 10, 0, 470)
+    liveCounterBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    liveCounterBtn.BorderSizePixel = 0
+    liveCounterBtn.Text = "📊 Live Counter: OFF (reduces lag)"
+    liveCounterBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    liveCounterBtn.TextSize = 11
+    liveCounterBtn.Font = Enum.Font.Gotham
+    liveCounterBtn.Parent = lightsaberGui
+    
+    local liveCounterBtnCorner = Instance.new("UICorner")
+    liveCounterBtnCorner.CornerRadius = UDim.new(0, 6)
+    liveCounterBtnCorner.Parent = liveCounterBtn
+    
+    -- Live Counter Button Click
+    liveCounterBtn.MouseButton1Click:Connect(function()
+        dragShowLiveCount = not dragShowLiveCount
+        if dragShowLiveCount then
+            liveCounterBtn.Text = "📊 Live Counter: ON (may lag)"
+            liveCounterBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 50)
+        else
+            liveCounterBtn.Text = "📊 Live Counter: OFF (reduces lag)"
+            liveCounterBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+        end
+    end)
+    
+    -- Unanchor Saber Mode Button
+    local unanchorModeBtn = Instance.new("TextButton")
+    unanchorModeBtn.Name = "UnanchorModeButton"
+    unanchorModeBtn.Size = UDim2.new(1, -20, 0, 40)
+    unanchorModeBtn.Position = UDim2.new(0, 10, 0, 505)
+    unanchorModeBtn.BackgroundColor3 = Color3.fromRGB(150, 100, 255)
+    unanchorModeBtn.BorderSizePixel = 0
+    unanchorModeBtn.Text = "🔓 UNANCHOR MODE: OFF"
+    unanchorModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    unanchorModeBtn.TextSize = 13
+    unanchorModeBtn.Font = Enum.Font.GothamBold
+    unanchorModeBtn.Parent = lightsaberGui
+    
+    local unanchorModeBtnCorner = Instance.new("UICorner")
+    unanchorModeBtnCorner.CornerRadius = UDim.new(0, 6)
+    unanchorModeBtnCorner.Parent = unanchorModeBtn
+    
+    -- Unanchor Mode Button Click
+    unanchorModeBtn.MouseButton1Click:Connect(function()
+        unanchorMode = not unanchorMode
+        if unanchorMode then
+            unanchorModeBtn.Text = "🔓 UNANCHOR MODE: ON"
+            unanchorModeBtn.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+        else
+            unanchorModeBtn.Text = "🔓 UNANCHOR MODE: OFF"
+            unanchorModeBtn.BackgroundColor3 = Color3.fromRGB(150, 100, 255)
+        end
+    end)
+    
+    -- Whitelist Section Label
+    local whitelistLabel = Instance.new("TextLabel")
+    whitelistLabel.Name = "WhitelistLabel"
+    whitelistLabel.Size = UDim2.new(1, -20, 0, 25)
+    whitelistLabel.Position = UDim2.new(0, 10, 0, 555)
+    whitelistLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    whitelistLabel.BorderSizePixel = 0
+    whitelistLabel.Text = "🛡️ WHITELIST"
+    whitelistLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    whitelistLabel.TextSize = 13
+    whitelistLabel.Font = Enum.Font.GothamBold
+    whitelistLabel.Parent = lightsaberGui
+    
+    local whitelistLabelCorner = Instance.new("UICorner")
+    whitelistLabelCorner.CornerRadius = UDim.new(0, 6)
+    whitelistLabelCorner.Parent = whitelistLabel
+    
+    -- Whitelist ScrollFrame
+    local whitelistScroll = Instance.new("ScrollingFrame")
+    whitelistScroll.Name = "WhitelistScroll"
+    whitelistScroll.Size = UDim2.new(1, -20, 0, 70)
+    whitelistScroll.Position = UDim2.new(0, 10, 0, 590)
+    whitelistScroll.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    whitelistScroll.BorderSizePixel = 0
+    whitelistScroll.ScrollBarThickness = 4
+    whitelistScroll.Parent = lightsaberGui
+    
+    local whitelistScrollCorner = Instance.new("UICorner")
+    whitelistScrollCorner.CornerRadius = UDim.new(0, 6)
+    whitelistScrollCorner.Parent = whitelistScroll
+    
+    local whitelistLayout = Instance.new("UIListLayout")
+    whitelistLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    whitelistLayout.Padding = UDim.new(0, 3)
+    whitelistLayout.Parent = whitelistScroll
+    
+    local whitelistPadding = Instance.new("UIPadding")
+    whitelistPadding.PaddingTop = UDim.new(0, 5)
+    whitelistPadding.PaddingBottom = UDim.new(0, 5)
+    whitelistPadding.PaddingLeft = UDim.new(0, 5)
+    whitelistPadding.PaddingRight = UDim.new(0, 5)
+    whitelistPadding.Parent = whitelistScroll
+    
+    -- Add Player to Whitelist Button
+    local addWhitelistBtn = Instance.new("TextButton")
+    addWhitelistBtn.Name = "AddWhitelistButton"
+    addWhitelistBtn.Size = UDim2.new(1, -20, 0, 35)
+    addWhitelistBtn.Position = UDim2.new(0, 10, 0, 670)
+    addWhitelistBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    addWhitelistBtn.BorderSizePixel = 0
+    addWhitelistBtn.Text = "➕ Add Selected Player"
+    addWhitelistBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    addWhitelistBtn.TextSize = 13
+    addWhitelistBtn.Font = Enum.Font.GothamBold
+    addWhitelistBtn.Parent = lightsaberGui
+    
+    local addWhitelistBtnCorner = Instance.new("UICorner")
+    addWhitelistBtnCorner.CornerRadius = UDim.new(0, 6)
+    addWhitelistBtnCorner.Parent = addWhitelistBtn
+    
+    -- Function to update whitelist display
+    local function updateWhitelistDisplay()
+        -- Clear existing
+        for _, child in ipairs(whitelistScroll:GetChildren()) do
+            if child:IsA("Frame") then
+                child:Destroy()
+            end
+        end
+        
+        -- Add each whitelisted player
+        for _, playerName in ipairs(whitelistedPlayers) do
+            local whitelistEntry = Instance.new("Frame")
+            whitelistEntry.Name = playerName
+            whitelistEntry.Size = UDim2.new(1, -10, 0, 25)
+            whitelistEntry.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            whitelistEntry.BorderSizePixel = 0
+            whitelistEntry.Parent = whitelistScroll
+            
+            local whitelistEntryCorner = Instance.new("UICorner")
+            whitelistEntryCorner.CornerRadius = UDim.new(0, 5)
+            whitelistEntryCorner.Parent = whitelistEntry
+            
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(1, -30, 1, 0)
+            nameLabel.Position = UDim2.new(0, 5, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = playerName
+            nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            nameLabel.TextSize = 12
+            nameLabel.Font = Enum.Font.Gotham
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.Parent = whitelistEntry
+            
+            local removeBtn = Instance.new("TextButton")
+            removeBtn.Size = UDim2.new(0, 20, 0, 20)
+            removeBtn.Position = UDim2.new(1, -23, 0, 2.5)
+            removeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            removeBtn.BorderSizePixel = 0
+            removeBtn.Text = "X"
+            removeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            removeBtn.TextSize = 11
+            removeBtn.Font = Enum.Font.GothamBold
+            removeBtn.Parent = whitelistEntry
+            
+            local removeBtnCorner = Instance.new("UICorner")
+            removeBtnCorner.CornerRadius = UDim.new(0, 4)
+            removeBtnCorner.Parent = removeBtn
+            
+            removeBtn.MouseButton1Click:Connect(function()
+                -- Remove from whitelist
+                for i, name in ipairs(whitelistedPlayers) do
+                    if name == playerName then
+                        table.remove(whitelistedPlayers, i)
+                        break
+                    end
+                end
+                updateWhitelistDisplay()
+            end)
+        end
+        
+        whitelistScroll.CanvasSize = UDim2.new(0, 0, 0, whitelistLayout.AbsoluteContentSize.Y + 10)
+    end
+    
+    -- Add player to whitelist
+    addWhitelistBtn.MouseButton1Click:Connect(function()
+        if selectedPlayer and not isWhitelisted(selectedPlayer.Name) then
+            table.insert(whitelistedPlayers, selectedPlayer.Name)
+            updateWhitelistDisplay()
+        end
+    end)
+    
+    -- Toggle selection mode (ACTIVATE/DEACTIVATE)
+    toggleSelectionBtn.MouseButton1Click:Connect(function()
+        lightsaberMode = not lightsaberMode
+        
+        if lightsaberMode then
+            toggleSelectionBtn.Text = "🔴 DEACTIVATE"
+            toggleSelectionBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            statusLabel.Text = "🟢 ACTIVE - Click to select!"
+            statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        else
+            toggleSelectionBtn.Text = "🟢 ACTIVATE"
+            toggleSelectionBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+            statusLabel.Text = "🔴 INACTIVE - Click Activate!"
+            statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+            
+            -- Clear selection when deactivating
+            if selectionBox then
+                selectionBox:Destroy()
+                selectionBox = nil
+            end
+            selectedPart = nil
+        end
+    end)
+    
+    -- Unselect button (clears selection but keeps mode active)
+    unselectBtn.MouseButton1Click:Connect(function()
+        if selectionBox then
+            selectionBox:Destroy()
+            selectionBox = nil
+        end
+        selectedPart = nil
+        print("Selection cleared - mode still active!")
+    end)
+    
+    -- Toggle SelectionBox visibility
+    toggleBoxBtn.MouseButton1Click:Connect(function()
+        selectionBoxEnabled = not selectionBoxEnabled
+        
+        if selectionBoxEnabled then
+            toggleBoxBtn.Text = "👁️ Hide SelectionBox"
+            if selectionBox then
+                selectionBox.Visible = true
+            end
+        else
+            toggleBoxBtn.Text = "👁️ Show SelectionBox"
+            if selectionBox then
+                selectionBox.Visible = false
+            end
+        end
+    end)
+    
+    -- Close button
+    lightsaberCloseBtn.MouseButton1Click:Connect(function()
+        lightsaberGui.Visible = false
+        lightsaberMode = false
+        if selectionBox then
+            selectionBox:Destroy()
+            selectionBox = nil
+        end
+        selectedPart = nil
+    end)
+    
+    -- Initial whitelist display
+    updateWhitelistDisplay()
+end
+
+-- Create the Lightsaber GUI
+createLightsaberGUI()
+
+-- Lightsaber Mode Button Click
+lightsaberBtn.MouseButton1Click:Connect(function()
+    if lightsaberGui then
+        lightsaberGui.Visible = not lightsaberGui.Visible
+    end
+end)
+
+-- Mouse click detection for Lightsaber Mode
+mouse.Button1Down:Connect(function()
+    if not lightsaberMode then return end
+    
+    -- DRAG SELECTION MODE
+    if dragSelectionMode then
+        if dragPhase == 0 then
+            -- Start drag selection
+            dragStartPos = mouse.Hit.Position
+            dragCurrentPos = dragStartPos
+            dragPhase = 1
+            dragSelectionActive = true
+            dragLockedX = nil
+            dragLockedZ = nil
+            dragStartMouseY = nil
+            dragCurrentY = nil
+            print("📦 Drag selection started! Move mouse along X axis (RED), then click")
+            updateDragSelectionBox()
+        elseif dragPhase == 1 then
+            -- Lock X dimension, move to Z phase
+            dragLockedX = dragCurrentPos.X
+            dragPhase = 2
+            print("📦 X axis locked at " .. math.floor(dragLockedX) .. "! Move mouse along Z axis (BLUE), then click")
+            updateDragSelectionBox()
+        elseif dragPhase == 2 then
+            -- Lock Z dimension, move to Y phase
+            dragLockedZ = dragCurrentPos.Z
+            dragPhase = 3
+            dragStartMouseY = mouse.Y
+            dragCurrentY = dragStartPos.Y
+            print("📦 Z axis locked at " .. math.floor(dragLockedZ) .. "! Move mouse UP/DOWN for Y axis (GREEN)")
+            print("📦 Press F to FINALIZE or ] to CANCEL")
+            updateDragSelectionBox()
+        end
+        return
+    end
+    
+    -- NORMAL LIGHTSABER MODE
+    local target = mouse.Target
+    if not target then return end
+    
+    -- DON'T DELETE GUI PARTS!
+    if target:IsDescendantOf(plr.PlayerGui) then
+        return
+    end
+    
+    -- DON'T DELETE THE SELECTIONBOX ITSELF!
+    if target:IsA("SelectionBox") or target == selectionBox then
+        return
+    end
+    
+    -- DON'T DELETE GRASS!
+    if target.Name == "Grass" then
+        warn("🌱 Can't delete grass!")
+        return
+    end
+    
+    -- Check if it's your own character (only block if stealFromSelf is OFF AND in steal mode)
+    if stealMode and not stealFromSelf and target:IsDescendantOf(chr) then
+        warn("⚠️ Can't steal from yourself! Enable 'Steal From Self' toggle.")
+        return
+    end
+    
+    -- Check if it's a whitelisted player's character
+    local character = target:FindFirstAncestorOfClass("Model")
+    if character then
+        local player = game.Players:GetPlayerFromCharacter(character)
+        if player and isWhitelisted(player.Name) then
+            warn("🛡️ Cannot remove whitelisted player:", player.Name)
+            return
+        end
+    end
+    
+    print("⚔️ Lightsaber hit:", target:GetFullName())
+    
+    -- Update selected part
+    selectedPart = target
+    
+    -- Create or update SelectionBox (visual feedback) - PARENT TO WORKSPACE!
+    if selectionBox then
+        selectionBox:Destroy()
+    end
+    
+    if selectionBoxEnabled then
+        selectionBox = Instance.new("SelectionBox")
+        selectionBox.Adornee = target
+        -- Color based on mode: Steal = Green, Unanchor = Blue, Delete = Pink
+        if stealMode then
+            selectionBox.Color3 = Color3.fromRGB(50, 255, 50)
+        elseif unanchorMode then
+            selectionBox.Color3 = Color3.fromRGB(100, 200, 255)
+        else
+            selectionBox.Color3 = Color3.fromRGB(255, 50, 150)
+        end
+        selectionBox.LineThickness = 0.05
+        selectionBox.Transparency = 0.5
+        selectionBox.Visible = true
+        selectionBox.Parent = workspace -- PARENT TO WORKSPACE NOT TARGET!
+    end
+    
+    -- STEAL MODE, UNANCHOR MODE, or DELETE MODE
+    task.spawn(function()
+        -- Small delay so SelectionBox shows first
+        wait(0.05)
+        
+        if stealMode then
+            -- STEAL MODE - Steal the part using group/ungroup exploit
+            if target:IsA("BasePart") or target:IsA("MeshPart") then
+                local success = stealPart(target)
+                if success then
+                    print("🐀 Stolen:", target:GetFullName())
+                else
+                    warn("❌ Failed to steal:", target:GetFullName())
+                end
+            elseif target:IsA("Model") then
+                -- Steal all parts in the model
+                local count = 0
+                for _, part in ipairs(target:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("MeshPart") then
+                        if stealPart(part) then
+                            count = count + 1
+                        end
+                        wait(0.05) -- Small delay between parts
+                    end
+                end
+                print("🐀 Stolen " .. count .. " parts from model:", target:GetFullName())
+            end
+        elseif unanchorMode then
+            -- UNANCHOR MODE - Just unanchor the part
+            if target:IsA("BasePart") or target:IsA("MeshPart") then
+                target.Anchored = false
+                print("🔓 Unanchored:", target:GetFullName())
+            elseif target:IsA("Model") then
+                -- Unanchor all parts in the model
+                for _, part in ipairs(target:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("MeshPart") then
+                        part.Anchored = false
+                    end
+                end
+                print("🔓 Unanchored model:", target:GetFullName())
+            end
+        else
+            -- DELETE MODE - Remove the part
+            if character and (target:IsA("BasePart") or target:IsA("MeshPart")) then
+                -- It's a body part - remove it
+                removeBodyPart(target)
+            elseif target:IsA("Model") then
+                -- It's a model - remove the whole thing
+                removeModel(target)
+            else
+                -- Just a regular part - remove it
+                removeBodyPart(target)
+            end
+        end
+        
+        -- Clear selection after action
+        wait(0.3)
+        if selectionBox then
+            selectionBox:Destroy()
+            selectionBox = nil
+        end
+        selectedPart = nil
+    end)
+end)
+
+-- Initialize
+populateBodyParts(selectedCharacter)
+
+-- Keyboard handler for drag selection (] to cancel, F to finalize)
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- Press ] to cancel drag selection
+    if input.KeyCode == Enum.KeyCode.RightBracket then
+        if dragSelectionActive then
+            print("🚫 Cancelling drag selection...")
+            cancelDragSelection()
+        end
+    end
+    
+    -- Press F to finalize drag selection (only in phase 3)
+    if input.KeyCode == Enum.KeyCode.F then
+        if dragSelectionActive and dragPhase == 3 then
+            print("✅ F key pressed - Finalizing selection!")
+            finalizeDragSelection()
+        elseif dragSelectionActive and dragPhase < 3 then
+            print("⚠️ Complete all 3 axes first! (Currently on phase " .. dragPhase .. "/3)")
+        end
+    end
+end)
+
+-- Mouse move handler for drag selection
+game:GetService("RunService").RenderStepped:Connect(function()
+    if dragSelectionActive and dragPhase > 0 then
+        if dragPhase == 3 then
+            -- For Y-axis, use mouse screen position instead of raycast
+            if dragStartMouseY then
+                local mouseDelta = mouse.Y - dragStartMouseY
+                -- Scale factor: 1 pixel = 0.1 studs (adjust as needed)
+                local yOffset = -mouseDelta * 0.1
+                dragCurrentY = dragStartPos.Y + yOffset
+            end
+        else
+            -- For X and Z axes, use normal raycast
+            dragCurrentPos = mouse.Hit.Position
+        end
+        updateDragSelectionBox()
+    end
+end)
+
+-- Update player list when players join/leave
+game.Players.PlayerAdded:Connect(function()
+    if dropdownOpen then
+        updatePlayerDropdown()
+    end
+end)
+
+game.Players.PlayerRemoving:Connect(function()
+    if dropdownOpen then
+        updatePlayerDropdown()
+    end
+end)
+
+print("Body Part Remover with Lightsaber Mode loaded!")
+print("Click the ⚔️ LIGHTSABER MODE button to open the second GUI!")
+print("📦 3D Drag Selection: Click X axis → Click Z axis → Click Y axis (move UP/DOWN) → Press F to finalize")
+print("Press ] to cancel drag selection at any time")
