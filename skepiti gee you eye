@@ -1,0 +1,492 @@
+-- Skibidi GUI Wrapper
+-- Features: Player dropdown, refresh, and "all" mode
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- Create ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SkibidiGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Check if running on executor
+if gethui then
+    ScreenGui.Parent = gethui()
+elseif syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game.CoreGui
+else
+    ScreenGui.Parent = game.CoreGui
+end
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 320, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+-- Title Bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = TitleBar
+
+-- Title Text
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Skibidi Vote GUI"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 18
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TitleBar
+
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -35, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 16
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = TitleBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseButton
+
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Player Navigation Label
+local PlayerLabel = Instance.new("TextLabel")
+PlayerLabel.Size = UDim2.new(1, -30, 0, 20)
+PlayerLabel.Position = UDim2.new(0, 15, 0, 50)
+PlayerLabel.BackgroundTransparency = 1
+PlayerLabel.Text = "Select Player:"
+PlayerLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+PlayerLabel.TextSize = 14
+PlayerLabel.Font = Enum.Font.Gotham
+PlayerLabel.TextXAlignment = Enum.TextXAlignment.Left
+PlayerLabel.Parent = MainFrame
+
+-- Previous Player Button
+local PrevButton = Instance.new("TextButton")
+PrevButton.Size = UDim2.new(0, 40, 0, 35)
+PrevButton.Position = UDim2.new(0, 15, 0, 75)
+PrevButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+PrevButton.BorderSizePixel = 0
+PrevButton.Text = "◀"
+PrevButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+PrevButton.TextSize = 16
+PrevButton.Font = Enum.Font.GothamBold
+PrevButton.Parent = MainFrame
+
+local PrevCorner = Instance.new("UICorner")
+PrevCorner.CornerRadius = UDim.new(0, 6)
+PrevCorner.Parent = PrevButton
+
+-- Player Display
+local PlayerDisplay = Instance.new("TextLabel")
+PlayerDisplay.Size = UDim2.new(1, -120, 0, 35)
+PlayerDisplay.Position = UDim2.new(0, 60, 0, 75)
+PlayerDisplay.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+PlayerDisplay.BorderSizePixel = 0
+PlayerDisplay.Text = "No player selected"
+PlayerDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+PlayerDisplay.TextSize = 14
+PlayerDisplay.Font = Enum.Font.Gotham
+PlayerDisplay.Parent = MainFrame
+
+local DisplayCorner = Instance.new("UICorner")
+DisplayCorner.CornerRadius = UDim.new(0, 6)
+DisplayCorner.Parent = PlayerDisplay
+
+-- Next Player Button
+local NextButton = Instance.new("TextButton")
+NextButton.Size = UDim2.new(0, 40, 0, 35)
+NextButton.Position = UDim2.new(1, -55, 0, 75)
+NextButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+NextButton.BorderSizePixel = 0
+NextButton.Text = "▶"
+NextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+NextButton.TextSize = 16
+NextButton.Font = Enum.Font.GothamBold
+NextButton.Parent = MainFrame
+
+local NextCorner = Instance.new("UICorner")
+NextCorner.CornerRadius = UDim.new(0, 6)
+NextCorner.Parent = NextButton
+
+-- Mode Selection Label
+local ModeLabel = Instance.new("TextLabel")
+ModeLabel.Size = UDim2.new(1, -30, 0, 20)
+ModeLabel.Position = UDim2.new(0, 15, 0, 120)
+ModeLabel.BackgroundTransparency = 1
+ModeLabel.Text = "Select Mode (1-7):"
+ModeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+ModeLabel.TextSize = 14
+ModeLabel.Font = Enum.Font.Gotham
+ModeLabel.TextXAlignment = Enum.TextXAlignment.Left
+ModeLabel.Parent = MainFrame
+
+-- Mode Decrease Button
+local ModeDecButton = Instance.new("TextButton")
+ModeDecButton.Size = UDim2.new(0, 40, 0, 35)
+ModeDecButton.Position = UDim2.new(0, 15, 0, 145)
+ModeDecButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+ModeDecButton.BorderSizePixel = 0
+ModeDecButton.Text = "-"
+ModeDecButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ModeDecButton.TextSize = 20
+ModeDecButton.Font = Enum.Font.GothamBold
+ModeDecButton.Parent = MainFrame
+
+local ModeDecCorner = Instance.new("UICorner")
+ModeDecCorner.CornerRadius = UDim.new(0, 6)
+ModeDecCorner.Parent = ModeDecButton
+
+-- Mode Display
+local ModeDisplay = Instance.new("TextLabel")
+ModeDisplay.Size = UDim2.new(1, -120, 0, 35)
+ModeDisplay.Position = UDim2.new(0, 60, 0, 145)
+ModeDisplay.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+ModeDisplay.BorderSizePixel = 0
+ModeDisplay.Text = "Mode: 7"
+ModeDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+ModeDisplay.TextSize = 14
+ModeDisplay.Font = Enum.Font.GothamBold
+ModeDisplay.Parent = MainFrame
+
+local ModeDisplayCorner = Instance.new("UICorner")
+ModeDisplayCorner.CornerRadius = UDim.new(0, 6)
+ModeDisplayCorner.Parent = ModeDisplay
+
+-- Mode Increase Button
+local ModeIncButton = Instance.new("TextButton")
+ModeIncButton.Size = UDim2.new(0, 40, 0, 35)
+ModeIncButton.Position = UDim2.new(1, -55, 0, 145)
+ModeIncButton.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+ModeIncButton.BorderSizePixel = 0
+ModeIncButton.Text = "+"
+ModeIncButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ModeIncButton.TextSize = 20
+ModeIncButton.Font = Enum.Font.GothamBold
+ModeIncButton.Parent = MainFrame
+
+local ModeIncCorner = Instance.new("UICorner")
+ModeIncCorner.CornerRadius = UDim.new(0, 6)
+ModeIncCorner.Parent = ModeIncButton
+
+-- Refresh Button
+local RefreshButton = Instance.new("TextButton")
+RefreshButton.Size = UDim2.new(1, -30, 0, 35)
+RefreshButton.Position = UDim2.new(0, 15, 0, 195)
+RefreshButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
+RefreshButton.BorderSizePixel = 0
+RefreshButton.Text = "🔄 Refresh Players"
+RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshButton.TextSize = 14
+RefreshButton.Font = Enum.Font.GothamBold
+RefreshButton.Parent = MainFrame
+
+local RefreshCorner = Instance.new("UICorner")
+RefreshCorner.CornerRadius = UDim.new(0, 6)
+RefreshCorner.Parent = RefreshButton
+
+-- Execute Single Button
+local ExecuteButton = Instance.new("TextButton")
+ExecuteButton.Size = UDim2.new(1, -30, 0, 40)
+ExecuteButton.Position = UDim2.new(0, 15, 0, 240)
+ExecuteButton.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+ExecuteButton.BorderSizePixel = 0
+ExecuteButton.Text = "Execute Vote"
+ExecuteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ExecuteButton.TextSize = 15
+ExecuteButton.Font = Enum.Font.GothamBold
+ExecuteButton.Parent = MainFrame
+
+local ExecuteCorner = Instance.new("UICorner")
+ExecuteCorner.CornerRadius = UDim.new(0, 8)
+ExecuteCorner.Parent = ExecuteButton
+
+-- Execute All Button (removed to save space, functionality moved to Execute with no player selected)
+-- Or we can add it below if needed
+
+-- Variables
+local selectedPlayer = nil
+local currentPlayerIndex = 0
+local playerList = {}
+local selectedMode = 7
+
+-- Functions
+local function updatePlayerDisplay()
+    if #playerList == 0 then
+        PlayerDisplay.Text = "No players available"
+        selectedPlayer = nil
+        currentPlayerIndex = 0
+        return
+    end
+    
+    if currentPlayerIndex < 1 then
+        currentPlayerIndex = #playerList
+    elseif currentPlayerIndex > #playerList then
+        currentPlayerIndex = 1
+    end
+    
+    selectedPlayer = playerList[currentPlayerIndex]
+    if selectedPlayer then
+        PlayerDisplay.Text = selectedPlayer.Name
+    end
+end
+
+local function refreshPlayerList()
+    playerList = {}
+    
+    -- Add all players except local player
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerList, player)
+        end
+    end
+    
+    -- Sort alphabetically
+    table.sort(playerList, function(a, b)
+        return a.Name < b.Name
+    end)
+    
+    -- Update display
+    if currentPlayerIndex == 0 and #playerList > 0 then
+        currentPlayerIndex = 1
+    elseif currentPlayerIndex > #playerList then
+        currentPlayerIndex = #playerList
+    end
+    
+    updatePlayerDisplay()
+end
+
+local function updateModeDisplay()
+    ModeDisplay.Text = "Mode: " .. selectedMode
+end
+
+local function executeVote(targetPlayer)
+    local success, err = pcall(function()
+        ReplicatedStorage.RemoteEvents.VoteEnd:FireServer(table.unpack({
+            [1] = targetPlayer.Name,
+            [2] = "eEQ8T6kChodgkk8kVMJKeLg6QHEkSMBpxmckdk4pfb2Q7uKxnU4JCQ8",
+            [3] = selectedMode,
+            [4] = 0,
+        }))
+    end)
+    
+    if success then
+        print("✓ Vote executed for: " .. targetPlayer.Name .. " (Mode " .. selectedMode .. ")")
+    else
+        warn("✗ Failed to execute vote for " .. targetPlayer.Name .. ": " .. tostring(err))
+    end
+end
+
+local function executeAllVotes()
+    local count = 0
+    for _, player in pairs(playerList) do
+        executeVote(player)
+        count = count + 1
+        task.wait(0.1) -- Small delay between votes
+    end
+    print("✓ Executed votes for " .. count .. " players (Mode " .. selectedMode .. ")")
+end
+
+-- Event Connections
+PrevButton.MouseButton1Click:Connect(function()
+    currentPlayerIndex = currentPlayerIndex - 1
+    updatePlayerDisplay()
+end)
+
+NextButton.MouseButton1Click:Connect(function()
+    currentPlayerIndex = currentPlayerIndex + 1
+    updatePlayerDisplay()
+end)
+
+ModeDecButton.MouseButton1Click:Connect(function()
+    selectedMode = selectedMode - 1
+    if selectedMode < 1 then
+        selectedMode = 7
+    end
+    updateModeDisplay()
+end)
+
+ModeIncButton.MouseButton1Click:Connect(function()
+    selectedMode = selectedMode + 1
+    if selectedMode > 7 then
+        selectedMode = 1
+    end
+    updateModeDisplay()
+end)
+
+RefreshButton.MouseButton1Click:Connect(function()
+    refreshPlayerList()
+    RefreshButton.Text = "✓ Refreshed!"
+    RefreshButton.BackgroundColor3 = Color3.fromRGB(70, 180, 100)
+    task.wait(1)
+    RefreshButton.Text = "🔄 Refresh Players"
+    RefreshButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
+end)
+
+ExecuteButton.MouseButton1Click:Connect(function()
+    if selectedPlayer then
+        -- Execute for single player
+        ExecuteButton.Text = "Executing..."
+        ExecuteButton.BackgroundColor3 = Color3.fromRGB(60, 180, 100)
+        executeVote(selectedPlayer)
+        task.wait(0.5)
+        ExecuteButton.Text = "✓ Executed!"
+        task.wait(1)
+        ExecuteButton.Text = "Execute Vote"
+        ExecuteButton.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    else
+        -- Execute for all players
+        ExecuteButton.Text = "Executing All..."
+        ExecuteButton.BackgroundColor3 = Color3.fromRGB(60, 180, 100)
+        executeAllVotes()
+        task.wait(0.5)
+        ExecuteButton.Text = "✓ All Executed!"
+        task.wait(1)
+        ExecuteButton.Text = "Execute Vote"
+        ExecuteButton.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+    end
+end)
+
+-- Hover effects
+local function addHoverEffect(button, normalColor, hoverColor)
+    button.MouseEnter:Connect(function()
+        if not button.Text:match("%.%.%.") then -- Don't change color while executing
+            button.BackgroundColor3 = hoverColor
+        end
+    end)
+    
+    button.MouseLeave:Connect(function()
+        if not button.Text:match("%.%.%.") then
+            button.BackgroundColor3 = normalColor
+        end
+    end)
+end
+
+addHoverEffect(CloseButton, Color3.fromRGB(220, 50, 50), Color3.fromRGB(240, 70, 70))
+addHoverEffect(PrevButton, Color3.fromRGB(50, 50, 65), Color3.fromRGB(60, 60, 75))
+addHoverEffect(NextButton, Color3.fromRGB(50, 50, 65), Color3.fromRGB(60, 60, 75))
+addHoverEffect(ModeDecButton, Color3.fromRGB(50, 50, 65), Color3.fromRGB(60, 60, 75))
+addHoverEffect(ModeIncButton, Color3.fromRGB(50, 50, 65), Color3.fromRGB(60, 60, 75))
+addHoverEffect(RefreshButton, Color3.fromRGB(60, 120, 200), Color3.fromRGB(70, 140, 220))
+addHoverEffect(ExecuteButton, Color3.fromRGB(80, 200, 120), Color3.fromRGB(100, 220, 140))
+
+-- Chat command: .kick username
+local function kickByUsername(username)
+    local success, err = pcall(function()
+        ReplicatedStorage.RemoteEvents.VoteEnd:FireServer(table.unpack({
+            [1] = username,
+            [2] = "eEQ8T6kChodgkk8kVMJKeLg6QHEkSMBpxmckdk4pfb2Q7uKxnU4JCQ8",
+            [3] = 2,
+            [4] = 0,
+        }))
+    end)
+    
+    if success then
+        print("✓ Kick executed for: " .. username)
+    else
+        warn("✗ Failed to kick " .. username .. ": " .. tostring(err))
+    end
+end
+
+local function findPlayerByPartialName(partial)
+    partial = partial:lower()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Name:lower():sub(1, #partial) == partial then
+            return player.Name
+        end
+    end
+    return nil
+end
+
+local function kickAll()
+    local count = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        kickByUsername(player.Name)
+        count = count + 1
+        task.wait(0.1)
+    end
+    print("✓ Kicked " .. count .. " players (including yourself)")
+end
+
+local function kickOthers()
+    local count = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            kickByUsername(player.Name)
+            count = count + 1
+            task.wait(0.1)
+        end
+    end
+    print("✓ Kicked " .. count .. " players (except you)")
+end
+
+LocalPlayer.Chatted:Connect(function(msg)
+    if msg == ".kick all" then
+        kickAll()
+    elseif msg == ".kick others" then
+        kickOthers()
+    else
+        local partial = msg:match("^%.kick%s+(.+)$")
+        if partial then
+            partial = partial:match("^%s*(.-)%s*$")
+            local actualName = findPlayerByPartialName(partial)
+            if actualName then
+                kickByUsername(actualName)
+            else
+                warn("✗ No player found matching: " .. partial)
+            end
+        end
+    end
+end)
+
+-- Initialize
+refreshPlayerList()
+updateModeDisplay()
+
+-- Auto-refresh when players join/leave
+Players.PlayerAdded:Connect(function()
+    task.wait(0.5)
+    refreshPlayerList()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if selectedPlayer == player then
+        -- Move to next player if current one leaves
+        currentPlayerIndex = currentPlayerIndex + 1
+    end
+    task.wait(0.5)
+    refreshPlayerList()
+end)
+
+print("✓ Skibidi GUI loaded successfully!")
