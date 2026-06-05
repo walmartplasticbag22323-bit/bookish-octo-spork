@@ -826,7 +826,7 @@ orbitButton.TextSize = 14
 orbitButton.Font = Enum.Font.SourceSansBold
 orbitButton.Parent = scrollFrame
 
--- Orbit Player Button
+-- Orbit Player Toggle Button
 currentY = currentY + 55
 local orbitPlayerButton = Instance.new("TextButton")
 orbitPlayerButton.Name = "OrbitPlayerButton"
@@ -835,7 +835,7 @@ orbitPlayerButton.Position = UDim2.new(0.05, 0, 0, currentY)
 orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 80, 150)
 orbitPlayerButton.BorderSizePixel = 1
 orbitPlayerButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
-orbitPlayerButton.Text = "🧍 ORBIT PLAYER"
+orbitPlayerButton.Text = "🧍 ORBIT PLAYER: OFF"
 orbitPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 orbitPlayerButton.TextSize = 14
 orbitPlayerButton.Font = Enum.Font.SourceSansBold
@@ -1034,8 +1034,13 @@ local function stopOrbiting()
 	orbitingParts = {}
 	orbitButton.Text = "START ORBITING"
 	orbitButton.BackgroundColor3 = Color3.fromRGB(50, 120, 50)
+	-- NOTE: orbitPlayerMode toggle state is preserved — only reset via the toggle button itself
+end
+
+-- Full reset of orbit player toggle (used when forcefully stopping)
+local function resetOrbitPlayerToggle()
 	orbitPlayerMode = false
-	orbitPlayerButton.Text = "🧍 ORBIT PLAYER"
+	orbitPlayerButton.Text = "🧍 ORBIT PLAYER: OFF"
 	orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 80, 150)
 end
 
@@ -6782,8 +6787,9 @@ local function startOrbiting()
 	orbitButton.Text = "STOP ORBITING"
 	orbitButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
 	if orbitPlayerMode then
-		orbitPlayerButton.Text = "🧍 STOP PLAYER ORBIT"
-		orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
+		print("🧍 Orbiting around YOUR CHARACTER!")
+	else
+		print("🌟 Orbiting around selected part: " .. (selectedPart and selectedPart.Name or "None"))
 	end
 end
 
@@ -6993,20 +6999,23 @@ orbitButton.MouseButton1Click:Connect(function()
 	if orbitConnection then
 		stopOrbiting()
 	else
-		orbitPlayerMode = false  -- Ensure we orbit the selected part, not the player
+		-- Start orbiting (respects current orbitPlayerMode toggle state)
 		startOrbiting()
 	end
 end)
 
 orbitPlayerButton.MouseButton1Click:Connect(function()
-	if orbitConnection and orbitPlayerMode then
-		-- Already orbiting player — stop
-		stopOrbiting()
+	-- Toggle the orbit player mode
+	orbitPlayerMode = not orbitPlayerMode
+	
+	if orbitPlayerMode then
+		orbitPlayerButton.Text = "🧍 ORBIT PLAYER: ON"
+		orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+		print("🧍 Orbit Player Mode: ON — click 'START ORBITING' to orbit around yourself!")
 	else
-		-- Start orbiting around the local player
-		stopOrbiting()
-		orbitPlayerMode = true
-		startOrbiting()
+		orbitPlayerButton.Text = "🧍 ORBIT PLAYER: OFF"
+		orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 80, 150)
+		print("🧍 Orbit Player Mode: OFF — will orbit around selected part")
 	end
 end)
 
