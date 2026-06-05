@@ -86,6 +86,7 @@ local wingsConnection = nil
 local wingParts = {left = {}, right = {}}
 local rainbowMode = false
 local networkOwnershipFilterMode = false -- 🎯 NEW: Only orbit parts you own!
+local orbitPlayerMode = false -- 🧍 Orbit around the local player instead of a selected part
 
 -- Create GUI
 local screenGui = Instance.new("ScreenGui")
@@ -825,6 +826,21 @@ orbitButton.TextSize = 14
 orbitButton.Font = Enum.Font.SourceSansBold
 orbitButton.Parent = scrollFrame
 
+-- Orbit Player Button
+currentY = currentY + 55
+local orbitPlayerButton = Instance.new("TextButton")
+orbitPlayerButton.Name = "OrbitPlayerButton"
+orbitPlayerButton.Size = UDim2.new(0.9, 0, 0, 45)
+orbitPlayerButton.Position = UDim2.new(0.05, 0, 0, currentY)
+orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 80, 150)
+orbitPlayerButton.BorderSizePixel = 1
+orbitPlayerButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
+orbitPlayerButton.Text = "🧍 ORBIT PLAYER"
+orbitPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+orbitPlayerButton.TextSize = 14
+orbitPlayerButton.Font = Enum.Font.SourceSansBold
+orbitPlayerButton.Parent = scrollFrame
+
 -- Info Label
 currentY = currentY + 55
 local infoLabel = Instance.new("TextLabel")
@@ -1018,6 +1034,9 @@ local function stopOrbiting()
 	orbitingParts = {}
 	orbitButton.Text = "START ORBITING"
 	orbitButton.BackgroundColor3 = Color3.fromRGB(50, 120, 50)
+	orbitPlayerMode = false
+	orbitPlayerButton.Text = "🧍 ORBIT PLAYER"
+	orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 80, 150)
 end
 
 local function destroyWings()
@@ -6566,8 +6585,8 @@ local function applyAnimation(part, targetPos, centerPos, time, index, total, ph
 end
 
 local function startOrbiting()
-	if not selectedPart or not selectedPart.Parent then
-		warn("No valid part selected!")
+	if not orbitPlayerMode and (not selectedPart or not selectedPart.Parent) then
+		warn("No valid part selected! Select a part first, or use 'Orbit Player'.")
 		return
 	end
 	
@@ -6578,17 +6597,33 @@ local function startOrbiting()
 	gapValue = tonumber(gapTextbox.Text) or 2
 	maxOrbitRadius = tonumber(maxRadiusTextbox.Text) or 50
 	
+	-- Determine the center reference for gathering/orbiting
+	local function getOrbitCenter()
+		if orbitPlayerMode then
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			return hrp and hrp.Position or Vector3.new(0, 0, 0)
+		else
+			return selectedPart.Position
+		end
+	end
+	
 	local totalParts = 0
 	local acceptedParts = 0
 	local rejectedByRadius = 0
+	local centerForGather = getOrbitCenter()
 	
 	for _, obj in ipairs(workspace:GetDescendants()) do
-		if obj:IsA("BasePart") and obj ~= selectedPart then
+		if obj:IsA("BasePart") then
+			-- Skip the selected part (if any) and skip character parts
+			local char = player.Character
+			if obj == selectedPart then continue end
+			if char and obj:IsDescendantOf(char) then continue end
 			if isPartUnlocked(obj) and not obj.Anchored then
 				totalParts = totalParts + 1
 				
 				-- Check radius limit if enabled
-				local distanceFromCenter = (obj.Position - selectedPart.Position).Magnitude
+				local distanceFromCenter = (obj.Position - centerForGather).Magnitude
 				if radiusLimitEnabled and distanceFromCenter > maxOrbitRadius then
 					rejectedByRadius = rejectedByRadius + 1
 					continue
@@ -6683,12 +6718,20 @@ local function startOrbiting()
 	
 	local startTime = tick()
 	orbitConnection = RunService.Heartbeat:Connect(function()
-		if not selectedPart or not selectedPart.Parent then
+		if not orbitPlayerMode and (not selectedPart or not selectedPart.Parent) then
 			stopOrbiting()
 			return
 		end
 		
-		local centerPos = selectedPart.Position
+		local centerPos
+		if orbitPlayerMode then
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if not hrp then stopOrbiting() return end
+			centerPos = hrp.Position
+		else
+			centerPos = selectedPart.Position
+		end
 		local time = tick() - startTime
 		
 		for part, data in pairs(orbitData) do
@@ -6738,6 +6781,10 @@ local function startOrbiting()
 	
 	orbitButton.Text = "STOP ORBITING"
 	orbitButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
+	if orbitPlayerMode then
+		orbitPlayerButton.Text = "🧍 STOP PLAYER ORBIT"
+		orbitPlayerButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
+	end
 end
 
 -- Button Events
@@ -6943,7 +6990,24 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 orbitButton.MouseButton1Click:Connect(function()
-	if orbitConnection then stopOrbiting() else startOrbiting() end
+	if orbitConnection then
+		stopOrbiting()
+	else
+		orbitPlayerMode = false  -- Ensure we orbit the selected part, not the player
+		startOrbiting()
+	end
+end)
+
+orbitPlayerButton.MouseButton1Click:Connect(function()
+	if orbitConnection and orbitPlayerMode then
+		-- Already orbiting player — stop
+		stopOrbiting()
+	else
+		-- Start orbiting around the local player
+		stopOrbiting()
+		orbitPlayerMode = true
+		startOrbiting()
+	end
 end)
 
 mouse.Button1Down:Connect(function()
