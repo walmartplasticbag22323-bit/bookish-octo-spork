@@ -1,0 +1,1195 @@
+--[[
+    GUIDED MISSILE LAUNCHER - F3X API EDITION 🚀
+    Client-dominant replication system (like R6 Rig Builder)
+    
+    FEATURES:
+    - Client controls rocket movement (smooth, no lag)
+    - Server replication every frame (other players see it!)
+    - Mouse-guided targeting system
+    - Explosion on impact with visual effects
+    - Batch operations for performance
+    - 0.001x server size, 1000x client mesh scale
+    
+    CONTROLS:
+    - Equip tool from backpack
+    - Click to launch rocket
+    - Move mouse to guide rocket
+    - Rocket follows your cursor!
+    
+    REPLICATION STRATEGY:
+    - Client: Calculates rocket position every frame
+    - Client: Updates local CFrame instantly
+    - Client: Spawns async task to sync to server
+    - Server: Receives updates and replicates to other players
+    - Result: Smooth client-side, visible to everyone!
+]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- Wait for character
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+-- F3X API Setup
+local bt = workspace:WaitForChild(player.Name):WaitForChild("Building Tools")
+local ep = bt.SyncAPI.ServerEndpoint
+local SyncAPI = bt.SyncAPI
+local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+
+print("GUIDED MISSILE LAUNCHER - F3X EDITION")
+print("Client-dominant replication system active!")
+print("Click to launch, move mouse to guide!")
+
+-- ============================================================================
+-- CONFIGURATION
+-- ============================================================================
+
+local REPLICATION_RATE = 55 -- Hz (updates per second to server)
+
+-- Configurable settings
+local CONFIG = {
+    rocketSpeed = 80,
+    rocketTurnSpeed = 0.3,
+    smokeParticles = 25,
+    smokeSpeed = 20,
+    explosionRadius = 4,
+    rocketLifetime = 20,
+    hardcoreMode = false,  -- Remove parts blocking the way
+    madmanMode = false     -- Remove ALL parts (including people)
+}
+
+-- ============================================================================
+-- CONFIGURATION GUI
+-- ============================================================================
+
+local function createConfigGUI()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "MissileConfigGUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 320, 0, 480)
+    mainFrame.Position = UDim2.new(1, -340, 0.5, -240)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    mainFrame.BorderSizePixel = 3
+    mainFrame.BorderColor3 = Color3.fromRGB(100, 50, 200)
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = screenGui
+    
+    -- Title Bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -10, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "MISSILE CONFIG"
+    titleLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+    titleLabel.TextSize = 20
+    titleLabel.Font = Enum.Font.Arcade
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = titleBar
+    
+    -- Close Button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.BorderSizePixel = 2
+    closeBtn.BorderColor3 = Color3.fromRGB(255, 100, 100)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 16
+    closeBtn.Font = Enum.Font.Arcade
+    closeBtn.Parent = mainFrame
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        mainFrame.Visible = false
+    end)
+    
+    -- Minimize Button
+    local minimizeBtn = Instance.new("TextButton")
+    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
+    minimizeBtn.BorderSizePixel = 2
+    minimizeBtn.BorderColor3 = Color3.fromRGB(100, 100, 255)
+    minimizeBtn.Text = "-"
+    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minimizeBtn.TextSize = 20
+    minimizeBtn.Font = Enum.Font.Arcade
+    minimizeBtn.Parent = mainFrame
+    
+    local minimized = false
+    local originalSize = mainFrame.Size
+    
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            mainFrame.Size = UDim2.new(0, 320, 0, 40)
+            minimizeBtn.Text = "+"
+        else
+            mainFrame.Size = originalSize
+            minimizeBtn.Text = "-"
+        end
+    end)
+    
+    -- Content Frame
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Name = "ContentFrame"
+    contentFrame.Size = UDim2.new(1, -20, 1, -60)
+    contentFrame.Position = UDim2.new(0, 10, 0, 50)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.Parent = mainFrame
+    
+    -- Helper function to create slider
+    local function createSlider(name, displayName, min, max, default, yPos, configKey)
+        local sliderFrame = Instance.new("Frame")
+        sliderFrame.Name = name
+        sliderFrame.Size = UDim2.new(1, 0, 0, 60)
+        sliderFrame.Position = UDim2.new(0, 0, 0, yPos)
+        sliderFrame.BackgroundTransparency = 1
+        sliderFrame.Parent = contentFrame
+        
+        -- Label
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 0, 20)
+        label.BackgroundTransparency = 1
+        label.Text = displayName
+        label.TextColor3 = Color3.fromRGB(200, 200, 200)
+        label.TextSize = 14
+        label.Font = Enum.Font.Arcade
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = sliderFrame
+        
+        -- Value Display
+        local valueLabel = Instance.new("TextLabel")
+        valueLabel.Size = UDim2.new(0, 60, 0, 20)
+        valueLabel.Position = UDim2.new(1, -60, 0, 0)
+        valueLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        valueLabel.BorderSizePixel = 2
+        valueLabel.BorderColor3 = Color3.fromRGB(0, 255, 200)
+        valueLabel.Text = tostring(default)
+        valueLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+        valueLabel.TextSize = 14
+        valueLabel.Font = Enum.Font.Arcade
+        valueLabel.Parent = sliderFrame
+        
+        -- Slider Background
+        local sliderBg = Instance.new("Frame")
+        sliderBg.Size = UDim2.new(1, 0, 0, 20)
+        sliderBg.Position = UDim2.new(0, 0, 0, 30)
+        sliderBg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        sliderBg.BorderSizePixel = 2
+        sliderBg.BorderColor3 = Color3.fromRGB(100, 50, 200)
+        sliderBg.Parent = sliderFrame
+        
+        -- Slider Fill
+        local sliderFill = Instance.new("Frame")
+        sliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+        sliderFill.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+        sliderFill.BorderSizePixel = 0
+        sliderFill.Parent = sliderBg
+        
+        -- Slider Button
+        local sliderBtn = Instance.new("TextButton")
+        sliderBtn.Size = UDim2.new(1, 0, 1, 0)
+        sliderBtn.BackgroundTransparency = 1
+        sliderBtn.Text = ""
+        sliderBtn.Parent = sliderBg
+        
+        local dragging = false
+        
+        sliderBtn.MouseButton1Down:Connect(function()
+            dragging = true
+        end)
+        
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        
+        sliderBtn.MouseMoved:Connect(function(x, y)
+            if dragging then
+                local relativeX = x - sliderBg.AbsolutePosition.X
+                local percentage = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
+                local value = min + (percentage * (max - min))
+                
+                -- Round to 1 decimal place
+                value = math.floor(value * 10 + 0.5) / 10
+                
+                CONFIG[configKey] = value
+                valueLabel.Text = tostring(value)
+                sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+            end
+        end)
+        
+        return sliderFrame
+    end
+    
+    -- Helper function to create toggle button
+    local function createToggle(name, displayName, yPos, configKey)
+        local toggleFrame = Instance.new("Frame")
+        toggleFrame.Name = name
+        toggleFrame.Size = UDim2.new(1, 0, 0, 35)
+        toggleFrame.Position = UDim2.new(0, 0, 0, yPos)
+        toggleFrame.BackgroundTransparency = 1
+        toggleFrame.Parent = contentFrame
+        
+        -- Toggle Button
+        local toggleBtn = Instance.new("TextButton")
+        toggleBtn.Size = UDim2.new(1, 0, 1, 0)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        toggleBtn.BorderSizePixel = 2
+        toggleBtn.BorderColor3 = Color3.fromRGB(100, 50, 200)
+        toggleBtn.Text = displayName .. ": OFF"
+        toggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        toggleBtn.TextSize = 14
+        toggleBtn.Font = Enum.Font.Arcade
+        toggleBtn.Parent = toggleFrame
+        
+        -- Update button appearance based on state
+        local function updateAppearance()
+            if CONFIG[configKey] then
+                toggleBtn.Text = displayName .. ": ON"
+                toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+                toggleBtn.BorderColor3 = Color3.fromRGB(255, 100, 100)
+                toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                toggleBtn.Text = displayName .. ": OFF"
+                toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                toggleBtn.BorderColor3 = Color3.fromRGB(100, 50, 200)
+                toggleBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+            end
+        end
+        
+        updateAppearance()
+        
+        toggleBtn.MouseButton1Click:Connect(function()
+            CONFIG[configKey] = not CONFIG[configKey]
+            updateAppearance()
+        end)
+        
+        return toggleFrame
+    end
+    
+    -- Create sliders
+    createSlider("RocketSpeed", "ROCKET SPEED", 20, 150, CONFIG.rocketSpeed, 0, "rocketSpeed")
+    createSlider("TurnSpeed", "TURN SPEED", 0.1, 1, CONFIG.rocketTurnSpeed, 70, "rocketTurnSpeed")
+    createSlider("SmokeParticles", "SMOKE PARTICLES", 10, 50, CONFIG.smokeParticles, 140, "smokeParticles")
+    createSlider("SmokeSpeed", "SMOKE SPEED", 5, 40, CONFIG.smokeSpeed, 210, "smokeSpeed")
+    createSlider("ExplosionRadius", "EXPLOSION RADIUS", 2, 20, CONFIG.explosionRadius, 280, "explosionRadius")
+    
+    -- Create mode toggles
+    createToggle("HardcoreMode", "HARDCORE MODE", 355, "hardcoreMode")
+    createToggle("MadmanMode", "MADMAN MODE", 400, "madmanMode")
+    
+    return screenGui
+end
+
+-- Create the GUI
+createConfigGUI()
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+-- ============================================================================
+-- MADMAN MODE: REALITY WARPING FUNCTION
+-- ============================================================================
+
+local function realityWarpPart(part)
+    -- The absolute chaos function that makes parts look normal but they're phantom server-side
+    print("🌀 REALITY WARPING: " .. part.Name)
+    
+    -- Step 1: Claim ownership via group/ungroup batch
+    EscalateEvent:FireServer(PartOwnership, {part})
+    
+    -- Wait for ownership to be claimed
+    repeat task.wait(0.01) until part:FindFirstChild("RRPartOwner")
+    
+    -- Step 2: Store original properties
+    local originalSize = part.Size
+    local originalTransparency = part.Transparency
+    
+    -- Step 3: CLIENT-SIDE - Keep part at original size and delete any mesh (fight server replication)
+    local clientFixer
+    clientFixer = RunService.Heartbeat:Connect(function()
+        -- Reset size to original (server keeps trying to make it 0.001x)
+        part.Size = originalSize
+        
+        -- Delete any mesh that appears (server keeps trying to add 1000x mesh)
+        local mesh = part:FindFirstChildOfClass("SpecialMesh")
+        if mesh then
+            mesh:Destroy()
+        end
+    end)
+    
+    -- Keep fighting replication for 7 seconds (until part is removed)
+    task.delay(7, function()
+        if clientFixer then
+            clientFixer:Disconnect()
+        end
+    end)
+    
+    -- Step 4: SERVER-SIDE CHANGES (multiply size by 0.001x, mesh scale 1000x, no collision)
+    task.spawn(function()
+        pcall(function()
+            -- Multiply current size by 0.001 on server
+            local tinySize = originalSize * 0.001
+            ep:InvokeServer("SyncResize", {{
+                Part = part,
+                Size = tinySize
+            }})
+            
+            -- Check if mesh already exists, if not create it
+            local existingMesh = part:FindFirstChildOfClass("SpecialMesh")
+            if not existingMesh then
+                ep:InvokeServer("CreateMeshes", {{Part = part}})
+                task.wait(0.05)
+            end
+            
+            -- Set mesh type based on part type
+            local meshType = Enum.MeshType.Brick
+            if part.ClassName == "WedgePart" then
+                meshType = Enum.MeshType.Wedge
+            elseif part.ClassName == "CornerWedgePart" then
+                meshType = Enum.MeshType.CornerWedge
+            elseif part.Shape == Enum.PartType.Ball then
+                meshType = Enum.MeshType.Sphere
+            elseif part.Shape == Enum.PartType.Cylinder then
+                meshType = Enum.MeshType.Cylinder
+            end
+            
+            -- Edit mesh scale to 1000x
+            ep:InvokeServer("SyncMesh", {{
+                Part = part,
+                MeshType = meshType,
+                Scale = Vector3.new(1000, 1000, 1000)
+            }})
+            
+            -- Disable collision on server
+            ep:InvokeServer("SyncCollision", {{
+                Part = part,
+                CanCollide = false
+            }})
+        end)
+    end)
+    
+    -- Step 5: After 5 seconds, fade to transparency over 2 seconds, then remove
+    task.delay(5, function()
+        if part and part.Parent then
+            print("💀 FADING: " .. part.Name)
+            local fadeStart = tick()
+            local fadeDuration = 2
+            
+            -- Lerp transparency over 2 seconds
+            local fadeConnection
+            fadeConnection = RunService.Heartbeat:Connect(function()
+                if not part or not part.Parent then
+                    if fadeConnection then fadeConnection:Disconnect() end
+                    return
+                end
+                
+                local elapsed = tick() - fadeStart
+                local alpha = math.min(elapsed / fadeDuration, 1)
+                local newTransparency = originalTransparency + (1 - originalTransparency) * alpha
+                
+                -- Update transparency on server
+                task.spawn(function()
+                    pcall(function()
+                        ep:InvokeServer("SyncMaterial", {{
+                            Part = part,
+                            Transparency = newTransparency
+                        }})
+                    end)
+                end)
+                
+                -- When fade complete, keep part at transparency 1 (phantom forever)
+                if alpha >= 1 then
+                    fadeConnection:Disconnect()
+                    print("👻 PHANTOM: " .. part.Name .. " (invisible forever)")
+                end
+            end)
+        end
+    end)
+end
+
+-- ============================================================================
+-- PART CREATION & REMOVAL
+-- ============================================================================
+
+-- Create part with ownership (batch operations)
+local function createPart(size, cframe, color, material, transparency)
+    material = material or Enum.Material.Plastic
+    transparency = transparency or 0
+    
+    -- Create part at server (tiny size for stealth)
+    local part = ep:InvokeServer("CreatePart", "Normal", cframe, workspace)
+    
+    -- Claim ownership
+    EscalateEvent:FireServer(PartOwnership, {part})
+    repeat task.wait(0.01) until part:FindFirstChild("RRPartOwner")
+    
+    -- Apply properties in batch (SIMULTANEOUSLY!)
+    task.spawn(function()
+        -- Set size and position
+        ep:InvokeServer("SyncResize", {{
+            Part = part,
+            Size = size,
+            CFrame = cframe
+        }})
+    end)
+    
+    task.spawn(function()
+        -- Set material and transparency
+        SyncAPI:Invoke("SyncMaterial", {{
+            Part = part,
+            Material = material,
+            Transparency = transparency
+        }})
+    end)
+    
+    task.spawn(function()
+        -- Set color
+        SyncAPI:Invoke("SyncColor", {{
+            Part = part,
+            Color = color,
+            UnionColoring = true
+        }})
+    end)
+    
+    task.spawn(function()
+        -- Set collision
+        SyncAPI:Invoke("SyncCollision", {{
+            Part = part,
+            CanCollide = false
+        }})
+    end)
+    
+    task.spawn(function()
+        -- Set anchor (ANCHORED ON SERVER!)
+        SyncAPI:Invoke("SyncAnchor", {{
+            Part = part,
+            Anchored = true
+        }})
+    end)
+    
+    return part
+end
+
+-- Remove part (replicated)
+local function removePart(part)
+    if part and part.Parent then
+        ep:InvokeServer("Remove", {part})
+    end
+end
+
+-- Create explosion effect with SMOKE PARTICLES!
+local function createExplosion(position)
+    print("SMOKE EXPLOSION AT:", position)
+    
+    -- Create multiple smoke particles that fly outward!
+    local smokeCount = math.floor(CONFIG.smokeParticles)
+    local smokeSpeed = CONFIG.smokeSpeed
+    
+    for i = 1, smokeCount do
+        task.spawn(function()
+            -- Random direction for each smoke particle
+            local randomDirection = Vector3.new(
+                math.random(-100, 100) / 100,
+                math.random(-100, 100) / 100,
+                math.random(-100, 100) / 100
+            ).Unit
+            
+            -- Create smoke particle (0.01 size, ANCHORED!)
+            local smoke = createPart(
+                Vector3.new(0.01, 0.01, 0.01), -- Server size (0.01)
+                CFrame.new(position),
+                Color3.fromRGB(255, math.random(100, 200), 0), -- Orange/yellow smoke
+                Enum.Material.Neon,
+                0.3
+            )
+            
+            -- Add sphere mesh for smoke particle
+            task.spawn(function()
+                ep:InvokeServer("CreateMeshes", {{Part = smoke}})
+                task.wait(0.05)
+                ep:InvokeServer("SyncMesh", {{
+                    Part = smoke,
+                    MeshType = Enum.MeshType.Sphere,
+                    Scale = Vector3.new(0.5, 0.5, 0.5) -- Starting size (smaller)
+                }})
+            end)
+            
+            -- Animate smoke particle (move outward, grow, fade)
+            task.spawn(function()
+                local startTime = tick()
+                local lifetime = 1.2 -- Smoke lasts 1.2 seconds
+                
+                while tick() - startTime < lifetime do
+                    local progress = (tick() - startTime) / lifetime
+                    
+                    -- Calculate new position (move outward)
+                    local distance = smokeSpeed * (tick() - startTime)
+                    local newPos = position + (randomDirection * distance)
+                    local newCFrame = CFrame.new(newPos)
+                    
+                    -- Update position (CLIENT + SERVER)
+                    smoke.CFrame = newCFrame
+                    task.spawn(function()
+                        pcall(function()
+                            ep:InvokeServer("SyncMove", {{
+                                Part = smoke,
+                                CFrame = newCFrame
+                            }})
+                        end)
+                    end)
+                    
+                    -- Update size (grow over time) - MUCH SMALLER NOW
+                    local scale = 0.5 + (progress * 1.5) -- Grow from 0.5 to 2.0
+                    ep:InvokeServer("SyncMesh", {{
+                        Part = smoke,
+                        Scale = Vector3.new(scale, scale, scale)
+                    }})
+                    
+                    -- Update color (fade to dark gray)
+                    local colorProgress = progress
+                    local r = 255 - (colorProgress * 155) -- 255 -> 100
+                    local g = 150 - (colorProgress * 100) -- 150 -> 50
+                    local b = colorProgress * 50 -- 0 -> 50
+                    SyncAPI:Invoke("SyncColor", {{
+                        Part = smoke,
+                        Color = Color3.fromRGB(r, g, b),
+                        UnionColoring = true
+                    }})
+                    
+                    -- Update transparency (fade out)
+                    local transparency = 0.3 + (progress * 0.7) -- 0.3 -> 1.0
+                    SyncAPI:Invoke("SyncMaterial", {{
+                        Part = smoke,
+                        Transparency = transparency
+                    }})
+                    
+                    task.wait(0.03)
+                end
+                
+                -- Remove smoke particle
+                removePart(smoke)
+            end)
+            
+            -- Stagger spawn times slightly
+            task.wait(0.02)
+        end)
+    end
+    
+    -- Center flash (bright core)
+    task.spawn(function()
+        local flash = createPart(
+            Vector3.new(0.01, 0.01, 0.01),
+            CFrame.new(position),
+            Color3.fromRGB(255, 255, 200),
+            Enum.Material.Neon,
+            0
+        )
+        
+        task.spawn(function()
+            ep:InvokeServer("CreateMeshes", {{Part = flash}})
+            task.wait(0.05)
+            ep:InvokeServer("SyncMesh", {{
+                Part = flash,
+                MeshType = Enum.MeshType.Sphere,
+                Scale = Vector3.new(8, 8, 8)
+            }})
+        end)
+        
+        -- Flash fade out quickly
+        for i = 1, 10 do
+            task.wait(0.03)
+            SyncAPI:Invoke("SyncMaterial", {{
+                Part = flash,
+                Transparency = i * 0.1
+            }})
+        end
+        
+        removePart(flash)
+    end)
+    
+    -- Create actual Roblox explosion for visual/sound (CLIENT-SIDE ONLY!)
+    local exp = Instance.new("Explosion")
+    exp.Position = position
+    exp.BlastRadius = CONFIG.explosionRadius
+    exp.BlastPressure = 0  -- NO PHYSICS FORCE!
+    exp.ExplosionType = Enum.ExplosionType.NoCraters
+    exp.Parent = workspace
+    
+    -- Kill players in radius by removing their heads (F3X method)
+    task.spawn(function()
+        for _, otherPlayer in pairs(Players:GetPlayers()) do
+            if otherPlayer ~= player and otherPlayer.Character then
+                local hrp = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local head = otherPlayer.Character:FindFirstChild("Head")
+                
+                if hrp and head then
+                    local distance = (hrp.Position - position).Magnitude
+                    if distance <= CONFIG.explosionRadius then
+                        print("Killing player:", otherPlayer.Name, "by removing head")
+                        
+                        -- Remove head using F3X group/ungroup method (instant kill)
+                        task.spawn(function()
+                            pcall(function()
+                                -- Claim ownership first
+                                EscalateEvent:FireServer(PartOwnership, {head})
+                                task.wait(0.05)
+                                
+                                -- Group the head
+                                local groupArgs = {
+                                    "CreateGroup",
+                                    "Model",
+                                    workspace,
+                                    {head}
+                                }
+                                ep:InvokeServer(unpack(groupArgs))
+                                
+                                task.wait(0.05)
+                                
+                                -- Ungroup to remove (kills player)
+                                local ungroupArgs = {
+                                    "Ungroup",
+                                    {head}
+                                }
+                                ep:InvokeServer(unpack(ungroupArgs))
+                                
+                                print("Removed head from:", otherPlayer.Name)
+                            end)
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================================
+-- ROCKET CREATION AND CONTROL
+-- ============================================================================
+
+local activeRocket = nil
+local rocketConnection = nil
+local controlling = false
+local intendedCFrame = nil -- Client-side intended position (ALWAYS WINS!)
+local lastReplication = 0 -- For 55Hz rate limiting
+
+-- Create rocket with F3X API (ONE PART, MOVES CLIENT-SIDE!)
+local function createRocket(startCFrame)
+    print("Creating ONE rocket part...")
+    
+    -- Create rocket body (tiny server size 0.01, ANCHORED!)
+    local rocket = createPart(
+        Vector3.new(0.01, 0.01, 0.01), -- Server size (0.01 scale)
+        startCFrame,
+        BrickColor.Random().Color,
+        Enum.Material.Metal,
+        0
+    )
+    
+    -- Add rocket mesh (FileMesh doesn't multiply with part size!)
+    task.spawn(function()
+        ep:InvokeServer("CreateMeshes", {{Part = rocket}})
+        task.wait(0.05)
+    end)
+    
+    -- Sync mesh and color SIMULTANEOUSLY after ownership claimed
+    task.spawn(function()
+        task.wait(0.05) -- Wait for CreateMeshes
+        ep:InvokeServer("SyncMesh", {{
+            Part = rocket,
+            MeshType = Enum.MeshType.FileMesh,
+            MeshId = "http://www.roblox.com/asset/?id=2251534",
+            Scale = Vector3.new(0.5, 0.5, 0.2) -- FileMesh scale (no multiplication!)
+        }})
+    end)
+    
+    -- Add trail effect (CLIENT-SIDE)
+    task.spawn(function()
+        local att0 = Instance.new("Attachment")
+        att0.Name = "TrailAttachment0"
+        att0.Position = Vector3.new(-0.001, 0, -0.001)
+        att0.Parent = rocket
+        
+        local att1 = Instance.new("Attachment")
+        att1.Name = "TrailAttachment1"
+        att1.Position = Vector3.new(0.001, 0, 0.001)
+        att1.Parent = rocket
+        
+        local trail = Instance.new("Trail")
+        trail.Attachment0 = att0
+        trail.Attachment1 = att1
+        trail.Color = ColorSequence.new(Color3.new(1, 0, 0))
+        trail.LightEmission = 0.75
+        trail.MaxLength = 15
+        trail.MinLength = 0.1
+        trail.Lifetime = 4.5
+        trail.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(0.858, 0.081),
+            NumberSequenceKeypoint.new(0.958, 0.181)
+        })
+        trail.Parent = rocket
+    end)
+    
+    -- Add fire effect (CLIENT-SIDE)
+    task.spawn(function()
+        local fire = Instance.new("Fire")
+        fire.Parent = rocket
+    end)
+    
+    -- Add sound (CLIENT-SIDE)
+    local swooshSound = Instance.new("Sound")
+    swooshSound.SoundId = "rbxassetid://132456187"
+    swooshSound.Volume = 1
+    swooshSound.PlaybackSpeed = 0.5
+    swooshSound.Looped = true
+    swooshSound.Parent = rocket
+    swooshSound:Play()
+    
+    local boomSound = Instance.new("Sound")
+    boomSound.SoundId = "rbxassetid://138186576"
+    boomSound.Volume = 3
+    boomSound.PlaybackSpeed = 0.7
+    boomSound.PlayOnRemove = true
+    boomSound.Parent = rocket
+    
+    return rocket
+end
+
+-- Launch rocket with client-dominant control (THE SAUCE!)
+local function launchRocket()
+    if controlling then
+        print("Rocket already active!")
+        return
+    end
+    
+    if humanoid.Health <= 0 then
+        print("Cannot launch while dead!")
+        return
+    end
+    
+    controlling = true
+    print("LAUNCHING ROCKET!")
+    
+    -- Calculate launch position
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        controlling = false
+        return
+    end
+    
+    local launchCFrame = rootPart.CFrame * CFrame.new(0, 0, -4)
+    local targetPoint = mouse.Hit.Position
+    launchCFrame = CFrame.new(launchCFrame.Position, targetPoint)
+    
+    -- Create rocket (ONE PART!)
+    activeRocket = createRocket(launchCFrame)
+    intendedCFrame = launchCFrame
+    
+    -- Rocket physics (use CONFIG values)
+    local maxSpeed = CONFIG.rocketSpeed
+    local currentVelocity = launchCFrame.LookVector * maxSpeed
+    local turnSpeed = CONFIG.rocketTurnSpeed
+    
+    -- Set camera to follow rocket
+    local camera = workspace.CurrentCamera
+    local originalCameraSubject = camera.CameraSubject
+    camera.CameraSubject = activeRocket
+    
+    print("Rocket launched! Move mouse to guide!")
+    print("CLIENT-DOMINANT MODE: Client calculates, server replicates!")
+    
+    -- ANTI-RUBBERBANDING: Changed listener (RE-ASSERT #2)
+    local changedConnection
+    changedConnection = activeRocket:GetPropertyChangedSignal("CFrame"):Connect(function()
+        if intendedCFrame then
+            -- Server tried to overwrite? STOMP IT BACK!
+            activeRocket.CFrame = intendedCFrame
+        end
+    end)
+    
+    -- CLIENT-DOMINANT CONTROL LOOP (THE SAUCE!)
+    rocketConnection = RunService.Heartbeat:Connect(function(dt)
+        if not activeRocket or not activeRocket.Parent then
+            -- Rocket destroyed, cleanup
+            if rocketConnection then
+                rocketConnection:Disconnect()
+                rocketConnection = nil
+            end
+            if changedConnection then
+                changedConnection:Disconnect()
+            end
+            camera.CameraSubject = originalCameraSubject
+            controlling = false
+            activeRocket = nil
+            intendedCFrame = nil
+            print("Rocket destroyed")
+            return
+        end
+        
+        -- Calculate target direction (mouse position)
+        local targetPos = mouse.Hit.Position
+        local currentPos = activeRocket.Position
+        local targetDirection = (targetPos - currentPos).Unit
+        
+        -- Smooth turn towards target
+        currentVelocity = currentVelocity:Lerp(targetDirection * maxSpeed, turnSpeed * dt * 60)
+        
+        -- Calculate new CFrame (CLIENT CALCULATES!)
+        local newCFrame = CFrame.new(
+            currentPos + (currentVelocity * dt),
+            currentPos + currentVelocity
+        )
+        
+        -- Store intended CFrame (for anti-rubberbanding)
+        intendedCFrame = newCFrame
+        
+        -- CLIENT: Update position instantly (no lag, CLIENT WINS!)
+        activeRocket.CFrame = newCFrame
+        
+        -- SERVER: Replicate position asynchronously at 55Hz (other players see it!)
+        -- This is THE MOVEMENT REPLICATOR (runs on its own routine, never ends)
+        local currentTime = tick()
+        if currentTime - lastReplication >= 1/REPLICATION_RATE then
+            lastReplication = currentTime
+            task.spawn(function()
+                pcall(function()
+                    ep:InvokeServer("SyncMove", {{
+                        Part = activeRocket,
+                        CFrame = newCFrame
+                    }})
+                end)
+            end)
+        end
+        
+        -- ANTI-RUBBERBANDING: Re-assert #1 (end of Heartbeat)
+        activeRocket.CFrame = intendedCFrame
+        
+        -- Check for collision (raycasting)
+        local ray = Ray.new(currentPos, currentVelocity * dt)
+        local hit, hitPos = workspace:FindPartOnRay(ray, character)
+        
+        if hit and hit ~= activeRocket then
+            -- Determine what to do based on mode
+            local shouldExplode = false
+            
+            if CONFIG.madmanMode then
+                -- MADMAN MODE: Reality warp parts, explode on everything
+                print("💥 MADMAN MODE HIT: " .. hit.Name)
+                
+                -- Check if we should ignore (grass or large parts)
+                if hit.Name == "Grass" then
+                    print("   Ignoring grass")
+                elseif hit.Size.Magnitude > 250 then
+                    print("   Ignoring large part (" .. hit.Size.Magnitude .. " studs)")
+                else
+                    -- Reality warp the part (phantom server-side, normal client-side)
+                    realityWarpPart(hit)
+                    -- Always explode in madman mode
+                    shouldExplode = true
+                end
+                
+            elseif CONFIG.hardcoreMode then
+                -- HARDCORE MODE: Destroy parts, but explode on players
+                local hitPlayer = game.Players:GetPlayerFromCharacter(hit.Parent)
+                
+                if hitPlayer then
+                    -- Hit a player, explode and kill them
+                    print("💀 HARDCORE MODE: Hit player " .. hitPlayer.Name)
+                    shouldExplode = true
+                elseif hit.Name == "Grass" then
+                    -- Ignore grass
+                    print("🌿 HARDCORE MODE: Ignoring grass")
+                elseif hit.Size.Magnitude > 250 then
+                    -- Ignore large parts (baseplate)
+                    print("🏗️ HARDCORE MODE: Ignoring large part (" .. hit.Size.Magnitude .. " studs)")
+                else
+                    -- Destroy blocking part and continue
+                    print("💥 HARDCORE MODE: Destroying blocking part " .. hit.Name)
+                    removePart(hit)
+                end
+                
+            else
+                -- NORMAL MODE: Explode on any hit
+                print("💥 IMPACT!")
+                shouldExplode = true
+            end
+            
+            -- If we should explode, do cleanup
+            if shouldExplode then
+                -- Create explosion
+                createExplosion(hitPos)
+                
+                -- Cleanup
+                if rocketConnection then
+                    rocketConnection:Disconnect()
+                    rocketConnection = nil
+                end
+                if changedConnection then
+                    changedConnection:Disconnect()
+                end
+                camera.CameraSubject = originalCameraSubject
+                controlling = false
+                intendedCFrame = nil
+                
+                -- Remove rocket
+                removePart(activeRocket)
+                activeRocket = nil
+            end
+        end
+    end)
+    
+    -- ANTI-RUBBERBANDING: RenderStepped re-assert #3 (right before render)
+    local renderConnection
+    renderConnection = RunService.RenderStepped:Connect(function()
+        if activeRocket and intendedCFrame then
+            activeRocket.CFrame = intendedCFrame
+        else
+            if renderConnection then
+                renderConnection:Disconnect()
+            end
+        end
+    end)
+    
+    -- Auto-cleanup after timeout (use CONFIG value)
+    task.delay(CONFIG.rocketLifetime, function()
+        if activeRocket and activeRocket.Parent then
+            print("Rocket timeout")
+            if rocketConnection then
+                rocketConnection:Disconnect()
+                rocketConnection = nil
+            end
+            if changedConnection then
+                changedConnection:Disconnect()
+            end
+            if renderConnection then
+                renderConnection:Disconnect()
+            end
+            camera.CameraSubject = originalCameraSubject
+            controlling = false
+            intendedCFrame = nil
+            removePart(activeRocket)
+            activeRocket = nil
+        end
+    end)
+end
+
+-- ============================================================================
+-- TOOL CREATION (F3X REPLICATED!)
+-- ============================================================================
+
+-- Create replicated launcher handle with F3X
+local function createLauncherHandle()
+    print("Creating replicated launcher handle...")
+    
+    -- Create handle part (0.01 size on server)
+    local handle = createPart(
+        Vector3.new(0.01, 0.01, 0.01), -- Server size (0.01)
+        CFrame.new(0, 0, 0),
+        Color3.fromRGB(70, 70, 70),
+        Enum.Material.Plastic,
+        0
+    )
+    
+    -- Add launcher mesh (FileMesh doesn't multiply with part size!)
+    task.spawn(function()
+        ep:InvokeServer("CreateMeshes", {{Part = handle}})
+        task.wait(0.05)
+    end)
+    
+    -- Sync mesh and texture SIMULTANEOUSLY
+    task.spawn(function()
+        task.wait(0.05) -- Wait for CreateMeshes
+        ep:InvokeServer("SyncMesh", {{
+            Part = handle,
+            MeshType = Enum.MeshType.FileMesh,
+            MeshId = "http://www.roblox.com/asset/?id=94690054",
+            TextureId = "http://www.roblox.com/asset/?id=94689966",
+            Scale = Vector3.new(1.5, 1.5, 1.5)
+        }})
+    end)
+    
+    return handle
+end
+
+local launcherHandle = createLauncherHandle()
+
+-- Create tool wrapper (client-side for interaction)
+local tool = Instance.new("Tool")
+tool.Name = "GuidedMissile"
+tool.RequiresHandle = true -- Need handle for proper animation
+tool.ToolTip = "Launch the rocket and guide it with your mouse!"
+tool.CanBeDropped = false
+
+-- Set proper grip for rocket launcher pose
+tool.Grip = CFrame.new(0, 0, -1.5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0))
+
+-- Create invisible handle for tool animation
+local invisHandle = Instance.new("Part")
+invisHandle.Name = "Handle"
+invisHandle.Size = Vector3.new(0.2, 0.2, 0.2)
+invisHandle.Transparency = 1
+invisHandle.CanCollide = false
+invisHandle.Parent = tool
+
+-- Handle positioning loop (replicate launcher position to hand)
+local launcherConnection
+local lastLauncherReplication = 0
+
+-- Tool events
+tool.Equipped:Connect(function()
+    print("Guided Missile equipped!")
+    
+    -- Position launcher to right hand
+    local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+    if rightArm and launcherHandle then
+        -- Initial position with proper rotation (90 degrees on X-axis)
+        local gripCFrame = rightArm.CFrame * CFrame.new(0, -0.6, -1) * CFrame.Angles(math.rad(90), 0, 0)
+        launcherHandle.CFrame = gripCFrame
+        
+        -- Replicate initial position
+        task.spawn(function()
+            pcall(function()
+                ep:InvokeServer("SyncMove", {{
+                    Part = launcherHandle,
+                    CFrame = gripCFrame
+                }})
+            end)
+        end)
+    end
+    
+    -- Start positioning loop for continuous replication
+    launcherConnection = RunService.Heartbeat:Connect(function()
+        local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+        if rightArm and launcherHandle and launcherHandle.Parent then
+            -- Calculate grip position with proper rotation (90 degrees on X-axis)
+            local gripCFrame = rightArm.CFrame * CFrame.new(0, -0.6, -1) * CFrame.Angles(math.rad(90), 0, 0)
+            
+            -- Client: Update instantly
+            launcherHandle.CFrame = gripCFrame
+            
+            -- Server: Replicate at 55Hz
+            local currentTime = tick()
+            if currentTime - lastLauncherReplication >= 1/REPLICATION_RATE then
+                lastLauncherReplication = currentTime
+                task.spawn(function()
+                    pcall(function()
+                        ep:InvokeServer("SyncMove", {{
+                            Part = launcherHandle,
+                            CFrame = gripCFrame
+                        }})
+                    end)
+                end)
+            end
+        end
+    end)
+end)
+
+tool.Unequipped:Connect(function()
+    print("Guided Missile unequipped!")
+    
+    -- Stop positioning loop
+    if launcherConnection then
+        launcherConnection:Disconnect()
+        launcherConnection = nil
+    end
+    
+    -- Move launcher away (hide it)
+    if launcherHandle and launcherHandle.Parent then
+        local hideCFrame = CFrame.new(0, -1000, 0)
+        launcherHandle.CFrame = hideCFrame
+        task.spawn(function()
+            pcall(function()
+                ep:InvokeServer("SyncMove", {{
+                    Part = launcherHandle,
+                    CFrame = hideCFrame
+                }})
+            end)
+        end)
+    end
+    
+    -- Cleanup if rocket is active
+    if controlling and activeRocket then
+        if rocketConnection then
+            rocketConnection:Disconnect()
+            rocketConnection = nil
+        end
+        workspace.CurrentCamera.CameraSubject = character:FindFirstChild("Humanoid")
+        controlling = false
+        removePart(activeRocket)
+        activeRocket = nil
+    end
+end)
+
+tool.Activated:Connect(function()
+    launchRocket()
+end)
+
+-- Handle death
+humanoid.Died:Connect(function()
+    -- Stop launcher positioning
+    if launcherConnection then
+        launcherConnection:Disconnect()
+        launcherConnection = nil
+    end
+    
+    -- Remove launcher
+    if launcherHandle then
+        removePart(launcherHandle)
+        launcherHandle = nil
+    end
+    
+    -- Cleanup active rocket
+    if controlling and activeRocket then
+        if rocketConnection then
+            rocketConnection:Disconnect()
+            rocketConnection = nil
+        end
+        workspace.CurrentCamera.CameraSubject = humanoid
+        controlling = false
+        removePart(activeRocket)
+        activeRocket = nil
+    end
+end)
+
+-- Add tool to backpack
+tool.Parent = player.Backpack
+
+-- Notification
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCore("SendNotification", {
+    Title = "Guided Missile Launcher",
+    Text = "F3X Edition - Client-Dominant Replication",
+    Icon = "rbxthumb://type=Asset&id=5107182114&w=150&h=150",
+    Duration = 5
+})
+
+print("Guided Missile Launcher loaded!")
+print("Check your backpack for the tool!")
+print("Click to launch, move mouse to guide!")
