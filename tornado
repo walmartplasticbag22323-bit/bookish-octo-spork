@@ -1,0 +1,510 @@
+--[[
+    Tornado Wand - DYNAMIC VERSION
+    - Spawns exact replica of your build with enhanced animations
+    - Client parts visible with dynamic effects, server parts invisible
+    - Multi-layer rotation with wobble and pulsing
+    - Dynamic movement patterns and particle effects
+    - Spawns in front of player
+]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local backpack = player:WaitForChild("Backpack")
+
+-- Debug mode
+local DEBUG_MODE = false
+
+-- Ensure tornado despawns
+local FORCE_DESPAWN = true
+
+-- Configuration
+local CONFIG = {
+    TORNADO_LIFETIME = 15,
+    
+    -- Rotation speeds (increased for more dynamic feel)
+    BOTTOM_RING_SPIN = 8,
+    TOP_RING_SPIN = -6,
+    CORE_SPIN = 4,
+    
+    -- Dynamic movement
+    FORWARD_SPEED = 25,          -- Speed moving in spawn direction
+    WOBBLE_INTENSITY = 2.5,      -- How much the tornado wobbles side-to-side
+    WOBBLE_SPEED = 1.5,          -- Speed of wobble oscillation
+    VERTICAL_PULSE = 1.5,        -- Vertical bobbing intensity
+    VERTICAL_PULSE_SPEED = 2,    -- Speed of vertical bobbing
+    
+    -- Size pulsing
+    SIZE_PULSE_AMOUNT = 0.15,    -- How much parts grow/shrink (15%)
+    SIZE_PULSE_SPEED = 3,        -- Speed of size pulsing
+    
+    -- Transparency pulsing
+    TRANSPARENCY_PULSE = 0.2,    -- How much transparency varies
+    TRANSPARENCY_SPEED = 2.5,    -- Speed of transparency pulsing
+    
+    -- Spawn settings
+    SPAWN_DISTANCE = 20,
+    SPAWN_HEIGHT = 21,
+    REPLICATION_RATE = 75,
+    
+    -- Destruction settings
+    DESTRUCTION_RADIUS = 30,     -- Radius to destroy parts
+    DESTRUCTION_CHECK_RATE = 10, -- Check for parts to destroy every X frames
+    USE_STEALTH_PARTS = true,    -- Use 0.001x size with 1000x mesh (invisible RRPartOwner)
+}
+
+-- Get F3X endpoints
+local function getEndpoints()
+    local bt = workspace:FindFirstChild(player.Name) and workspace[player.Name]:FindFirstChild("Building Tools")
+    if not bt then
+        local tool = backpack:FindFirstChild("Building Tools")
+        if tool and character then
+            character:WaitForChild("Humanoid"):EquipTool(tool)
+            task.wait(0.1)
+            bt = workspace:FindFirstChild(player.Name) and workspace[player.Name]:FindFirstChild("Building Tools")
+        end
+    end
+    
+    if not bt then
+        warn("Building Tools not found!")
+        return nil, nil
+    end
+    
+    return bt.SyncAPI.ServerEndpoint, bt.SyncAPI
+end
+
+-- Tornado part data - EXACT from your build file
+local TORNADO_DATA = {
+    -- Bottom ring (4 thin parts at Y=-9.5)
+    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(6.7161, -9.5, -1.0342), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-44.9978), 0), Transparency = 0.5, Group = "BottomRing"},
+    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(-6.7211, -9.5, -14.467), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(44.9977), math.rad(-180)), Transparency = 0.5, Group = "BottomRing"},
+    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(-6.7161, -9.5, -1.032), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(-45.0032), math.rad(-180)), Transparency = 0.5, Group = "BottomRing"},
+    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(6.7166, -9.5, -14.4692), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(45.0031), 0), Transparency = 0.5, Group = "BottomRing"},
+    
+    -- Top ring (4 larger parts at Y=6.75)
+    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(-3.0613, 6.75, -14.2928), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(74.9973), math.rad(-180)), Transparency = 0.5, Group = "TopRing"},
+    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(14.2969, 6.75, -3.0544), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(15.0041), 0), Transparency = 0.5, Group = "TopRing"},
+    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(-14.2997, 6.75, 3.0571), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(-15.0042), math.rad(-180)), Transparency = 0.5, Group = "TopRing"},
+    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(3.0571, 6.75, 14.2941), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-74.9974), 0), Transparency = 0.5, Group = "TopRing"},
+    
+    -- Core body (8 parts from bottom to top)
+    {Size = Vector3.new(6, 2.5, 6), Position = Vector3.new(3.2057, -22.875, -6.821), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(6.5, 1.5, 6.5), Position = Vector3.new(2.2058, -19.875, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(30.002), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(7, 3.25, 6.5), Position = Vector3.new(1.2059, -16.5, -7.821), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(14.9991), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(8.5, 3.25, 7.5), Position = Vector3.new(1.2059, -12.5, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(9.5, 7.75, 10.5), Position = Vector3.new(1.2059, -5, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(15.0041), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(12, 6.25, 12.5), Position = Vector3.new(0.2073, 3, -4.3228), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(16.5, 6.25, 14.5), Position = Vector3.new(-2.7939, 12, -1.8218), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(14.9991), 0), Transparency = 0.25, Group = "Core"},
+    {Size = Vector3.new(23.5, 6.25, 26), Position = Vector3.new(-3.501, 21, -0.4076), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(44.9977), 0), Transparency = 0.25, Group = "Core"},
+}
+
+-- Calculate build center from all parts
+local function calculateBuildCenter()
+    local sumX, sumY, sumZ = 0, 0, 0
+    for _, part in ipairs(TORNADO_DATA) do
+        sumX = sumX + part.Position.X
+        sumY = sumY + part.Position.Y
+        sumZ = sumZ + part.Position.Z
+    end
+    local count = #TORNADO_DATA
+    return Vector3.new(sumX/count, sumY/count, sumZ/count)
+end
+
+local BUILD_CENTER = calculateBuildCenter()
+
+-- Create server part (invisible, for replication) with STEALTH technique
+local function createServerPart(ep, syncAPI, partData, spawnCF)
+    local relativePos = partData.Position - BUILD_CENTER
+    local cf = spawnCF * CFrame.new(relativePos) * partData.Rotation
+    
+    -- STEALTH: Use 0.001x size (microscopic, hides RRPartOwner)
+    local stealthSize = CONFIG.USE_STEALTH_PARTS and (partData.Size * 0.001) or partData.Size
+    
+    local part = ep:InvokeServer("CreatePart", "Normal", cf, workspace)
+    if not part then return nil end
+    
+    -- Claim ownership
+    local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+    local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+    EscalateEvent:FireServer(PartOwnership, {part})
+    
+    -- Wait for ownership
+    local timeout = 0
+    repeat 
+        task.wait(0.01)
+        timeout = timeout + 0.01
+    until part:FindFirstChild("RRPartOwner") or timeout > 1
+    
+    if not part:FindFirstChild("RRPartOwner") then
+        part:Destroy()
+        return nil
+    end
+    
+    -- Set properties with stealth size
+    ep:InvokeServer("SyncResize", {{Part = part, Size = stealthSize, CFrame = cf}})
+    
+    if CONFIG.USE_STEALTH_PARTS then
+        -- Add mesh to compensate for tiny size (1000x scale)
+        syncAPI:Invoke("CreateMeshes", {{Part = part}})
+        task.wait(0.05)
+        
+        -- Set mesh to block shape with 1000x scale
+        syncAPI:Invoke("SyncMesh", {{
+            Part = part,
+            MeshType = Enum.MeshType.Brick,
+            Scale = Vector3.new(1000, 1000, 1000)
+        }})
+    end
+    
+    syncAPI:Invoke("SyncMaterial", {{Part = part, Transparency = 1, Material = Enum.Material.Sand}})
+    syncAPI:Invoke("SyncAnchor", {{Part = part, Anchored = true}})
+    syncAPI:Invoke("SyncColor", {{Part = part, UnionColoring = true, Color = Color3.fromRGB(163, 162, 165)}})
+    
+    return part
+end
+
+-- Batch update server parts
+local function batchUpdateServerParts(ep, partsData)
+    if not ep or #partsData == 0 then return end
+    
+    local moveData = {}
+    for _, info in ipairs(partsData) do
+        if info.serverPart and info.serverPart.Parent and info.clientPart and info.clientPart.Parent then
+            table.insert(moveData, {
+                Part = info.serverPart,
+                CFrame = info.clientPart.CFrame,
+            })
+        end
+    end
+    
+    if #moveData > 0 then
+        pcall(function()
+            ep:InvokeServer("SyncMove", moveData)
+        end)
+    end
+end
+
+-- Destroy parts in tornado's path
+local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
+    if not ep then return end
+    
+    local partsToDestroy = {}
+    
+    -- Find all parts in radius
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" then
+            -- Skip player characters
+            local isCharacterPart = false
+            local ancestor = obj.Parent
+            while ancestor do
+                if ancestor:IsA("Model") and Players:GetPlayerFromCharacter(ancestor) then
+                    isCharacterPart = true
+                    break
+                end
+                ancestor = ancestor.Parent
+            end
+            
+            if not isCharacterPart then
+                -- Check distance
+                local distance = (obj.Position - centerPos).Magnitude
+                if distance <= radius then
+                    table.insert(partsToDestroy, obj)
+                end
+            end
+        end
+    end
+    
+    -- Destroy parts using group/ungroup method (most reliable)
+    if #partsToDestroy > 0 then
+        task.spawn(function()
+            -- Claim ownership first
+            local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+            local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+            pcall(function()
+                EscalateEvent:FireServer(PartOwnership, partsToDestroy)
+            end)
+            
+            task.wait(0.1)
+            
+            -- Delete parts one by one
+            for _, part in ipairs(partsToDestroy) do
+                if part and part.Parent then
+                    pcall(function()
+                        -- Method 1: Group then ungroup (claims ownership and deletes)
+                        ep:InvokeServer("CreateGroup", "Model", workspace, {part})
+                        task.wait(0.02)
+                        ep:InvokeServer("Ungroup", {part})
+                    end)
+                end
+            end
+            
+            print("🌪️ Destroyed", #partsToDestroy, "parts in tornado path!")
+        end)
+    end
+end
+
+-- Main tornado spawn function
+local function spawnTornado(spawnCF, forwardDirection)
+    local ep, syncAPI = getEndpoints()
+    if not ep or not syncAPI then return end
+    
+    print("Spawning tornado at:", spawnCF.Position)
+    print("Build center:", BUILD_CENTER)
+    
+    -- Raycast down to find ground
+    local rayOrigin = spawnCF.Position
+    local rayDirection = Vector3.new(0, -1000, 0)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character}
+    
+    local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    local groundY = rayResult and rayResult.Position.Y or spawnCF.Position.Y
+    
+    -- Spawn tornado at ground level + height offset
+    local finalSpawnPos = Vector3.new(spawnCF.Position.X, groundY + CONFIG.SPAWN_HEIGHT, spawnCF.Position.Z)
+    local finalSpawnCF = CFrame.new(finalSpawnPos) * (spawnCF - spawnCF.Position)
+    
+    print("Ground detected at Y:", groundY, "Spawning at Y:", finalSpawnPos.Y)
+    
+    -- Create invisible main root at spawn position (ANCHORED to prevent sinking)
+    local mainRoot = Instance.new("Part")
+    mainRoot.Name = "TornadoRoot"
+    mainRoot.Size = Vector3.new(1, 1, 1)
+    mainRoot.CFrame = finalSpawnCF
+    mainRoot.Transparency = 1
+    mainRoot.Anchored = true  -- ANCHORED so it stays at exact position
+    mainRoot.CanCollide = false
+    mainRoot.Parent = workspace
+    
+    -- Create all client parts with group tracking
+    local clientParts = {}
+    local serverParts = {}
+    local partsByGroup = {BottomRing = {}, TopRing = {}, Core = {}}
+    
+    for i, partData in ipairs(TORNADO_DATA) do
+        -- Calculate relative position from build center
+        local relativePos = partData.Position - BUILD_CENTER
+        local partCF = spawnCF * CFrame.new(relativePos) * partData.Rotation
+        
+        -- Create client part
+        local clientPart = Instance.new("Part")
+        clientPart.Name = "TornadoPart_" .. i
+        clientPart.Size = partData.Size
+        clientPart.CFrame = partCF
+        clientPart.Transparency = partData.Transparency
+        clientPart.Material = Enum.Material.Sand
+        clientPart.Color = Color3.fromRGB(163, 162, 165)
+        clientPart.TopSurface = Enum.SurfaceType.Smooth
+        clientPart.BottomSurface = Enum.SurfaceType.Smooth
+        clientPart.Anchored = true  -- Anchored so they don't fall
+        clientPart.CanCollide = false
+        clientPart.Parent = workspace
+        
+        -- Store part info with group, relative position, and original properties
+        local partInfo = {
+            part = clientPart,
+            relativePos = relativePos,
+            rotation = partData.Rotation,
+            group = partData.Group,
+            baseSize = partData.Size,
+            baseTransparency = partData.Transparency,
+        }
+        
+        table.insert(clientParts, partInfo)
+        table.insert(partsByGroup[partData.Group], partInfo)
+        
+        -- Create server part in background
+        task.spawn(function()
+            local serverPart = createServerPart(ep, syncAPI, partData, spawnCF)
+            if serverPart then
+                table.insert(serverParts, {
+                    clientPart = clientPart,
+                    serverPart = serverPart,
+                })
+            end
+        end)
+    end
+    
+    print("Client tornado spawned with", #clientParts, "parts")
+    
+    -- Store initial Y for comparison
+    local initialY = finalSpawnPos.Y
+    
+    -- Animation loop
+    local startTime = tick()
+    local lastReplicationTime = 0
+    local replicationInterval = 1 / CONFIG.REPLICATION_RATE
+    local destructionFrameCounter = 0
+    
+    local mainRotation = 0
+    local bottomRotation = 0
+    local topRotation = 0
+    local coreRotation = 0
+    local distanceTraveled = 0
+    
+    local connection
+    connection = RunService.Heartbeat:Connect(function(dt)
+        local elapsedTime = tick() - startTime
+        
+        -- Check lifetime (skip if debug mode)
+        if elapsedTime > CONFIG.TORNADO_LIFETIME then
+            connection:Disconnect()
+            
+            -- Cleanup
+            mainRoot:Destroy()
+            for _, partInfo in ipairs(clientParts) do
+                if partInfo.part and partInfo.part.Parent then
+                    partInfo.part:Destroy()
+                end
+            end
+            
+            if ep and #serverParts > 0 then
+                local toRemove = {}
+                for _, info in ipairs(serverParts) do
+                    if info.serverPart and info.serverPart.Parent then
+                        table.insert(toRemove, info.serverPart)
+                    end
+                end
+                if #toRemove > 0 then
+                    pcall(function()
+                        ep:InvokeServer("Remove", toRemove)
+                    end)
+                end
+            end
+            
+            print("Tornado despawned")
+            return
+        end
+        
+        -- Update rotations (accelerated speeds)
+        bottomRotation = bottomRotation + (CONFIG.BOTTOM_RING_SPIN * dt)
+        topRotation = topRotation + (CONFIG.TOP_RING_SPIN * dt)
+        coreRotation = coreRotation + (CONFIG.CORE_SPIN * dt)
+        
+        -- Calculate dynamic wobble offset
+        local wobbleX = math.sin(elapsedTime * CONFIG.WOBBLE_SPEED) * CONFIG.WOBBLE_INTENSITY
+        local wobbleZ = math.cos(elapsedTime * CONFIG.WOBBLE_SPEED * 1.3) * CONFIG.WOBBLE_INTENSITY
+        
+        -- Calculate vertical pulse
+        local verticalPulse = math.sin(elapsedTime * CONFIG.VERTICAL_PULSE_SPEED) * CONFIG.VERTICAL_PULSE
+        
+        -- Move forward in spawn direction
+        distanceTraveled = distanceTraveled + (CONFIG.FORWARD_SPEED * dt)
+        local forwardOffset = forwardDirection * distanceTraveled
+        
+        -- Update main root position with all dynamic movements
+        local newPos = Vector3.new(
+            finalSpawnPos.X + wobbleX + forwardOffset.X,
+            finalSpawnPos.Y + verticalPulse,
+            finalSpawnPos.Z + wobbleZ + forwardOffset.Z
+        )
+        mainRoot.CFrame = CFrame.new(newPos)
+        
+        -- Destroy parts in path (every N frames to reduce lag)
+        destructionFrameCounter = destructionFrameCounter + 1
+        if destructionFrameCounter >= CONFIG.DESTRUCTION_CHECK_RATE then
+            destructionFrameCounter = 0
+            destroyPartsInRadius(ep, syncAPI, newPos, CONFIG.DESTRUCTION_RADIUS)
+        end
+        
+        -- Get current main CFrame
+        local mainCF = mainRoot.CFrame
+        
+        -- Calculate size and transparency pulse multipliers
+        local sizePulse = 1 + (math.sin(elapsedTime * CONFIG.SIZE_PULSE_SPEED) * CONFIG.SIZE_PULSE_AMOUNT)
+        local transparencyPulse = math.sin(elapsedTime * CONFIG.TRANSPARENCY_SPEED) * CONFIG.TRANSPARENCY_PULSE
+        
+        -- Apply multi-layer rotations with dynamic effects
+        for _, partInfo in ipairs(clientParts) do
+            if partInfo.part and partInfo.part.Parent then
+                local groupRotation = 0
+                local additionalScale = 1
+                
+                -- Different rotation speeds per group
+                if partInfo.group == "BottomRing" then
+                    groupRotation = bottomRotation
+                    additionalScale = 1 + (math.sin(elapsedTime * 2) * 0.1) -- Extra pulsing for bottom
+                elseif partInfo.group == "TopRing" then
+                    groupRotation = topRotation
+                    additionalScale = 1 + (math.cos(elapsedTime * 2.5) * 0.08) -- Different pulse for top
+                elseif partInfo.group == "Core" then
+                    groupRotation = coreRotation
+                end
+                
+                -- Calculate new position with group-specific rotation
+                local rotatedOffset = CFrame.Angles(0, groupRotation, 0) * partInfo.relativePos
+                
+                -- Apply rotation to both position AND orientation of the part
+                partInfo.part.CFrame = mainCF * CFrame.new(rotatedOffset) * CFrame.Angles(0, groupRotation, 0) * partInfo.rotation
+                
+                -- Apply dynamic size pulsing
+                local finalSize = partInfo.baseSize * sizePulse * additionalScale
+                partInfo.part.Size = finalSize
+                
+                -- Apply dynamic transparency pulsing
+                local finalTransparency = math.clamp(partInfo.baseTransparency + transparencyPulse, 0, 1)
+                partInfo.part.Transparency = finalTransparency
+            end
+        end
+        
+        -- Replicate to server at 75Hz
+        local currentTime = tick()
+        if currentTime - lastReplicationTime >= replicationInterval then
+            batchUpdateServerParts(ep, serverParts)
+            lastReplicationTime = currentTime
+        end
+    end)
+end
+
+-- Create spawner tool
+local function createSpawnerTool()
+    local tool = Instance.new("Tool")
+    tool.Name = "Tornado Spawner"
+    tool.RequiresHandle = false
+    tool.CanBeDropped = false
+    
+    local handle = Instance.new("Part")
+    handle.Name = "Handle"
+    handle.Size = Vector3.new(0.5, 3, 0.5)
+    handle.Material = Enum.Material.Neon
+    handle.BrickColor = BrickColor.new("Cyan")
+    handle.CanCollide = false
+    handle.Parent = tool
+    
+    tool.Activated:Connect(function()
+        local char = player.Character
+        if not char then return end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        -- Get forward direction from player's facing direction
+        local lookVector = hrp.CFrame.LookVector
+        local forwardDirection = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+        
+        -- Spawn in front of player at configured height
+        local spawnCF = hrp.CFrame * CFrame.new(0, CONFIG.SPAWN_HEIGHT, -CONFIG.SPAWN_DISTANCE)
+        spawnTornado(spawnCF, forwardDirection)
+    end)
+    
+    tool.Parent = backpack
+end
+
+-- Initialize
+print("=== Tornado Wand DYNAMIC VERSION LOADED ===")
+print("Build center calculated:", BUILD_CENTER)
+createSpawnerTool()
+print("Equip 'Tornado Spawner' and click to spawn dynamic tornado")
+print("- Tornado lasts", CONFIG.TORNADO_LIFETIME, "seconds")
+print("- Tornado moves in the direction you're facing")
+print("- Destroys parts in", CONFIG.DESTRUCTION_RADIUS, "stud radius")
+print("- Features: Wobble, pulsing, forward movement, DESTRUCTION")
+if CONFIG.USE_STEALTH_PARTS then
+    print("- STEALTH MODE: Parts use 0.001x size with 1000x mesh (invisible RRPartOwner)")
+end
+
