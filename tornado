@@ -1,7 +1,8 @@
 --[[
     Tornado Wand - DYNAMIC VERSION
     - Spawns exact replica of your build with enhanced animations
-    - Client parts visible with dynamic effects, server parts invisible
+    - Client parts FULLY VISIBLE (transparency = 0, no shadows)
+    - Server parts FULLY VISIBLE on server (transparency = 0, no shadows) but INVISIBLE on client
     - Multi-layer rotation with wobble and pulsing
     - Dynamic movement patterns and particle effects
     - Spawns in front of player
@@ -158,32 +159,91 @@ local function createServerPart(ep, syncAPI, partData, spawnCF)
             MeshType = Enum.MeshType.Brick,
             Scale = Vector3.new(1000, 1000, 1000)
         }})
+        
+        -- Update mesh scale dynamically during replication
+        part:SetAttribute("StealthMode", true)
     end
     
-    syncAPI:Invoke("SyncMaterial", {{Part = part, Transparency = 1, Material = Enum.Material.Sand}})
+    syncAPI:Invoke("SyncMaterial", {{Part = part, Transparency = 0, Material = Enum.Material.Sand}})
     syncAPI:Invoke("SyncAnchor", {{Part = part, Anchored = true}})
     syncAPI:Invoke("SyncColor", {{Part = part, UnionColoring = true, Color = Color3.fromRGB(163, 162, 165)}})
+    
+    -- Disable CastShadow using RemoteEvents
+    task.spawn(function()
+        task.wait(0.1)
+        pcall(function()
+            local RemoteEvents = RS:FindFirstChild("RemoteEvents")
+            if RemoteEvents and RemoteEvents:FindFirstChild("PropertyChanged") then
+                RemoteEvents.PropertyChanged:FireServer(part, "CastShadow", false)
+            end
+        end)
+    end)
+    
+    -- Make server part invisible on client side
+    part.Transparency = 1
+    part.CanCollide = false
     
     return part
 end
 
--- Batch update server parts
-local function batchUpdateServerParts(ep, partsData)
-    if not ep or #partsData == 0 then return end
+-- Batch update server parts with size and transparency
+local function batchUpdateServerParts(ep, syncAPI, partsData)
+    if not ep or not syncAPI or #partsData == 0 then return end
     
     local moveData = {}
+    local resizeData = {}
+    local meshUpdateData = {}
+    
     for _, info in ipairs(partsData) do
         if info.serverPart and info.serverPart.Parent and info.clientPart and info.clientPart.Parent then
+            -- Sync position
             table.insert(moveData, {
                 Part = info.serverPart,
                 CFrame = info.clientPart.CFrame,
             })
+            
+            -- Sync size (if using stealth mode, scale appropriately)
+            if CONFIG.USE_STEALTH_PARTS then
+                local stealthSize = info.clientPart.Size * 0.001
+                table.insert(resizeData, {
+                    Part = info.serverPart,
+                    Size = stealthSize,
+                    CFrame = info.clientPart.CFrame,
+                })
+                
+                -- Update mesh scale to match visual size
+                if info.serverPart:FindFirstChildOfClass("SpecialMesh") then
+                    table.insert(meshUpdateData, {
+                        Part = info.serverPart,
+                        MeshType = Enum.MeshType.Brick,
+                        Scale = Vector3.new(1000, 1000, 1000)
+                    })
+                end
+            else
+                table.insert(resizeData, {
+                    Part = info.serverPart,
+                    Size = info.clientPart.Size,
+                    CFrame = info.clientPart.CFrame,
+                })
+            end
         end
     end
     
     if #moveData > 0 then
         pcall(function()
             ep:InvokeServer("SyncMove", moveData)
+        end)
+    end
+    
+    if #resizeData > 0 then
+        pcall(function()
+            ep:InvokeServer("SyncResize", resizeData)
+        end)
+    end
+    
+    if #meshUpdateData > 0 then
+        pcall(function()
+            syncAPI:Invoke("SyncMesh", meshUpdateData)
         end)
     end
 end
@@ -291,18 +351,19 @@ local function spawnTornado(spawnCF, forwardDirection)
         local relativePos = partData.Position - BUILD_CENTER
         local partCF = spawnCF * CFrame.new(relativePos) * partData.Rotation
         
-        -- Create client part
+        -- Create client part (FULLY VISIBLE - transparency 0)
         local clientPart = Instance.new("Part")
         clientPart.Name = "TornadoPart_" .. i
         clientPart.Size = partData.Size
         clientPart.CFrame = partCF
-        clientPart.Transparency = partData.Transparency
+        clientPart.Transparency = 0  -- FULLY VISIBLE
         clientPart.Material = Enum.Material.Sand
         clientPart.Color = Color3.fromRGB(163, 162, 165)
         clientPart.TopSurface = Enum.SurfaceType.Smooth
         clientPart.BottomSurface = Enum.SurfaceType.Smooth
-        clientPart.Anchored = true  -- Anchored so they don't fall
+        clientPart.Anchored = true
         clientPart.CanCollide = false
+        clientPart.CastShadow = false  -- No shadows
         clientPart.Parent = workspace
         
         -- Store part info with group, relative position, and original properties
@@ -312,25 +373,45 @@ local function spawnTornado(spawnCF, forwardDirection)
             rotation = partData.Rotation,
             group = partData.Group,
             baseSize = partData.Size,
-            baseTransparency = partData.Transparency,
+            baseTransparency = 0,  -- Client parts stay at 0 transparency
         }
         
         table.insert(clientParts, partInfo)
         table.insert(partsByGroup[partData.Group], partInfo)
         
+        -- Store placeholder for server part
+        local serverPartInfo = {
+            clientPart = clientPart,
+            serverPart = nil,
+            partData = partData,
+        }
+        table.insert(serverParts, serverPartInfo)
+        
         -- Create server part in background
         task.spawn(function()
             local serverPart = createServerPart(ep, syncAPI, partData, spawnCF)
             if serverPart then
-                table.insert(serverParts, {
-                    clientPart = clientPart,
-                    serverPart = serverPart,
-                })
+                serverPartInfo.serverPart = serverPart
+                print("Server part created:", i, "/", #TORNADO_DATA)
+            else
+                warn("Failed to create server part:", i)
             end
         end)
     end
     
     print("Client tornado spawned with", #clientParts, "parts")
+    
+    -- Wait a bit for server parts to be created
+    task.wait(0.5)
+    
+    -- Count successful server parts
+    local serverPartCount = 0
+    for _, info in ipairs(serverParts) do
+        if info.serverPart and info.serverPart.Parent then
+            serverPartCount = serverPartCount + 1
+        end
+    end
+    print("Server parts created:", serverPartCount, "/", #TORNADO_DATA)
     
     -- Store initial Y for comparison
     local initialY = finalSpawnPos.Y
@@ -455,7 +536,7 @@ local function spawnTornado(spawnCF, forwardDirection)
         -- Replicate to server at 75Hz
         local currentTime = tick()
         if currentTime - lastReplicationTime >= replicationInterval then
-            batchUpdateServerParts(ep, serverParts)
+            batchUpdateServerParts(ep, syncAPI, serverParts)
             lastReplicationTime = currentTime
         end
     end)
@@ -504,6 +585,8 @@ print("- Tornado lasts", CONFIG.TORNADO_LIFETIME, "seconds")
 print("- Tornado moves in the direction you're facing")
 print("- Destroys parts in", CONFIG.DESTRUCTION_RADIUS, "stud radius")
 print("- Features: Wobble, pulsing, forward movement, DESTRUCTION")
+print("- CLIENT: Fully visible (transparency = 0), no shadows")
+print("- SERVER: Fully visible to others (transparency = 0), invisible to you, no shadows")
 if CONFIG.USE_STEALTH_PARTS then
     print("- STEALTH MODE: Parts use 0.001x size with 1000x mesh (invisible RRPartOwner)")
 end
