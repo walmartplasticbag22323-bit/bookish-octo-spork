@@ -1,5 +1,5 @@
---[[
-    Tornado Wand - DYNAMIC VERSION
+--[[e
+    Tornado Wand - DYNAMIC VERSIONe
     - Spawns exact replica of your build with enhanced animations
     - Client parts FULLY VISIBLE (transparency = 0, no shadows)
     - Server parts FULLY VISIBLE on server (transparency = 0, no shadows) but INVISIBLE on client
