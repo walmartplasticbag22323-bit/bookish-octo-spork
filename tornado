@@ -1,5 +1,5 @@
---[[e
-    Tornado Wand - DYNAMIC VERSIONe
+--[[
+    Tornado Wand - DYNAMIC VERSION
     - Spawns exact replica of your build with enhanced animations
     - Client parts FULLY VISIBLE (transparency = 0, no shadows)
     - Server parts FULLY VISIBLE on server (transparency = 0, no shadows) but INVISIBLE on client
@@ -279,7 +279,7 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
         end
     end
     
-    -- Destroy parts using group/ungroup + remove method
+    -- Destroy parts using lightsaber method (most reliable)
     if #partsToDestroy > 0 then
         task.spawn(function()
             -- Claim ownership first
@@ -293,28 +293,37 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
             
             local deletedCount = 0
             
-            -- Delete parts one by one
+            -- Delete parts one by one using lightsaber method
             for _, part in ipairs(partsToDestroy) do
                 if part and part.Parent then
-                    pcall(function()
-                        -- Group the part
-                        local group = ep:InvokeServer("CreateGroup", "Model", workspace, {part})
-                        task.wait(0.02)
+                    local success = pcall(function()
+                        -- Method 1: Group then ungroup (lightsaber method)
+                        local groupArgs = {
+                            "CreateGroup",
+                            "Model",
+                            workspace,
+                            {part}
+                        }
+                        ep:InvokeServer(unpack(groupArgs))
+                        task.wait(0.03)
                         
-                        -- Ungroup it
-                        if group and group.Parent then
-                            ep:InvokeServer("Ungroup", {group})
-                            task.wait(0.02)
-                        end
-                        
-                        -- Now remove the part explicitly
-                        if part and part.Parent then
-                            ep:InvokeServer("Remove", {part})
-                            deletedCount = deletedCount + 1
-                        end
+                        local ungroupArgs = {
+                            "Ungroup",
+                            {part}
+                        }
+                        ep:InvokeServer(unpack(ungroupArgs))
+                        deletedCount = deletedCount + 1
                     end)
                     
-                    task.wait(0.01)
+                    if not success then
+                        -- Fallback: Try direct remove
+                        pcall(function()
+                            ep:InvokeServer("Remove", {part})
+                            deletedCount = deletedCount + 1
+                        end)
+                    end
+                    
+                    task.wait(0.05)
                 end
             end
             
