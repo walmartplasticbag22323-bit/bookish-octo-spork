@@ -279,7 +279,7 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
         end
     end
     
-    -- Destroy parts using lightsaber method (most reliable)
+    -- Destroy parts using lightsaber method (group -> ungroup -> remove)
     if #partsToDestroy > 0 then
         task.spawn(function()
             -- Claim ownership first
@@ -293,11 +293,11 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
             
             local deletedCount = 0
             
-            -- Delete parts one by one using lightsaber method
+            -- Delete parts one by one: group -> ungroup -> remove
             for _, part in ipairs(partsToDestroy) do
                 if part and part.Parent then
                     local success = pcall(function()
-                        -- Method 1: Group then ungroup (lightsaber method)
+                        -- Step 1: Group the part
                         local groupArgs = {
                             "CreateGroup",
                             "Model",
@@ -307,12 +307,19 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
                         ep:InvokeServer(unpack(groupArgs))
                         task.wait(0.03)
                         
+                        -- Step 2: Ungroup it
                         local ungroupArgs = {
                             "Ungroup",
                             {part}
                         }
                         ep:InvokeServer(unpack(ungroupArgs))
-                        deletedCount = deletedCount + 1
+                        task.wait(0.02)
+                        
+                        -- Step 3: Remove the part
+                        if part and part.Parent then
+                            ep:InvokeServer("Remove", {part})
+                            deletedCount = deletedCount + 1
+                        end
                     end)
                     
                     if not success then
