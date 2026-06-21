@@ -1,593 +1,1131 @@
---[[
-    Tornado Wand - DYNAMIC VERSION
-    - Spawns exact replica of your build with enhanced animations
-    - Client parts FULLY VISIBLE (transparency = 0, no shadows)
-    - Server parts FULLY VISIBLE on server (transparency = 0, no shadows) but INVISIBLE on client
-    - Multi-layer rotation with wobble and pulsing
-    - Dynamic movement patterns and particle effects
-    - Spawns in front of player
-]]
+-- Pure Lua/Luau TTF Parser and 3D Text Builder for Roblox F3X
+-- Reads TTF files directly via readfile() and extracts glyph contours
+-- No external tools required - 100% pure Lua implementation
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-
+local UIS = game:GetService("UserInputService")
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local backpack = player:WaitForChild("Backpack")
 
--- Debug mode
-local DEBUG_MODE = false
-
--- Ensure tornado despawns
-local FORCE_DESPAWN = true
-
--- Configuration
-local CONFIG = {
-    TORNADO_LIFETIME = 15,
-    
-    -- Rotation speeds (increased for more dynamic feel)
-    BOTTOM_RING_SPIN = 8,
-    TOP_RING_SPIN = -6,
-    CORE_SPIN = 4,
-    
-    -- Dynamic movement
-    FORWARD_SPEED = 25,          -- Speed moving in spawn direction
-    WOBBLE_INTENSITY = 2.5,      -- How much the tornado wobbles side-to-side
-    WOBBLE_SPEED = 1.5,          -- Speed of wobble oscillation
-    VERTICAL_PULSE = 1.5,        -- Vertical bobbing intensity
-    VERTICAL_PULSE_SPEED = 2,    -- Speed of vertical bobbing
-    
-    -- Size pulsing
-    SIZE_PULSE_AMOUNT = 0.15,    -- How much parts grow/shrink (15%)
-    SIZE_PULSE_SPEED = 3,        -- Speed of size pulsing
-    
-    -- Transparency pulsing
-    TRANSPARENCY_PULSE = 0.2,    -- How much transparency varies
-    TRANSPARENCY_SPEED = 2.5,    -- Speed of transparency pulsing
-    
-    -- Spawn settings
-    SPAWN_DISTANCE = 20,
-    SPAWN_HEIGHT = 21,
-    REPLICATION_RATE = 75,
-    
-    -- Destruction settings
-    DESTRUCTION_RADIUS = 30,     -- Radius to destroy parts
-    DESTRUCTION_CHECK_RATE = 10, -- Check for parts to destroy every X frames
-    USE_STEALTH_PARTS = true,    -- Use 0.001x size with 1000x mesh (invisible RRPartOwner)
-}
-
--- Get F3X endpoints
-local function getEndpoints()
-    local bt = workspace:FindFirstChild(player.Name) and workspace[player.Name]:FindFirstChild("Building Tools")
-    if not bt then
-        local tool = backpack:FindFirstChild("Building Tools")
-        if tool and character then
-            character:WaitForChild("Humanoid"):EquipTool(tool)
-            task.wait(0.1)
-            bt = workspace:FindFirstChild(player.Name) and workspace[player.Name]:FindFirstChild("Building Tools")
-        end
-    end
-    
-    if not bt then
-        warn("Building Tools not found!")
-        return nil, nil
-    end
-    
-    return bt.SyncAPI.ServerEndpoint, bt.SyncAPI
+-- Create FontProcessor folder in executor workspace if it doesn't exist
+local FOLDER_NAME = "FontProcessor"
+if not isfolder(FOLDER_NAME) then
+	makefolder(FOLDER_NAME)
+	print("Created folder: " .. FOLDER_NAME)
 end
 
--- Tornado part data - EXACT from your build file
-local TORNADO_DATA = {
-    -- Bottom ring (4 thin parts at Y=-9.5)
-    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(6.7161, -9.5, -1.0342), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-44.9978), 0), Transparency = 0.5, Group = "BottomRing"},
-    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(-6.7211, -9.5, -14.467), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(44.9977), math.rad(-180)), Transparency = 0.5, Group = "BottomRing"},
-    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(-6.7161, -9.5, -1.032), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(-45.0032), math.rad(-180)), Transparency = 0.5, Group = "BottomRing"},
-    {Size = Vector3.new(1, 1.75, 19.5), Position = Vector3.new(6.7166, -9.5, -14.4692), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(45.0031), 0), Transparency = 0.5, Group = "BottomRing"},
-    
-    -- Top ring (4 larger parts at Y=6.75)
-    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(-3.0613, 6.75, -14.2928), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(74.9973), math.rad(-180)), Transparency = 0.5, Group = "TopRing"},
-    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(14.2969, 6.75, -3.0544), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(15.0041), 0), Transparency = 0.5, Group = "TopRing"},
-    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(-14.2997, 6.75, 3.0571), Rotation = CFrame.fromEulerAnglesXYZ(math.rad(-180), math.rad(-15.0042), math.rad(-180)), Transparency = 0.5, Group = "TopRing"},
-    {Size = Vector3.new(2.7999, 1.75, 30.3), Position = Vector3.new(3.0571, 6.75, 14.2941), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-74.9974), 0), Transparency = 0.5, Group = "TopRing"},
-    
-    -- Core body (8 parts from bottom to top)
-    {Size = Vector3.new(6, 2.5, 6), Position = Vector3.new(3.2057, -22.875, -6.821), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(6.5, 1.5, 6.5), Position = Vector3.new(2.2058, -19.875, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(30.002), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(7, 3.25, 6.5), Position = Vector3.new(1.2059, -16.5, -7.821), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(14.9991), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(8.5, 3.25, 7.5), Position = Vector3.new(1.2059, -12.5, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(9.5, 7.75, 10.5), Position = Vector3.new(1.2059, -5, -7.3238), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(15.0041), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(12, 6.25, 12.5), Position = Vector3.new(0.2073, 3, -4.3228), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(-14.9992), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(16.5, 6.25, 14.5), Position = Vector3.new(-2.7939, 12, -1.8218), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(14.9991), 0), Transparency = 0.25, Group = "Core"},
-    {Size = Vector3.new(23.5, 6.25, 26), Position = Vector3.new(-3.501, 21, -0.4076), Rotation = CFrame.fromEulerAnglesXYZ(0, math.rad(44.9977), 0), Transparency = 0.25, Group = "Core"},
-}
+-- ============================================================================
+-- BINARY READER
+-- ============================================================================
 
--- Calculate build center from all parts
-local function calculateBuildCenter()
-    local sumX, sumY, sumZ = 0, 0, 0
-    for _, part in ipairs(TORNADO_DATA) do
-        sumX = sumX + part.Position.X
-        sumY = sumY + part.Position.Y
-        sumZ = sumZ + part.Position.Z
-    end
-    local count = #TORNADO_DATA
-    return Vector3.new(sumX/count, sumY/count, sumZ/count)
+local BinaryReader = {}
+BinaryReader.__index = BinaryReader
+
+function BinaryReader.new(data)
+	local self = setmetatable({}, BinaryReader)
+	self.data = data
+	self.pos = 1
+	self.length = #data
+	return self
 end
 
-local BUILD_CENTER = calculateBuildCenter()
-
--- Create server part (invisible, for replication) with STEALTH technique
-local function createServerPart(ep, syncAPI, partData, spawnCF)
-    local relativePos = partData.Position - BUILD_CENTER
-    local cf = spawnCF * CFrame.new(relativePos) * partData.Rotation
-    
-    -- STEALTH: Use 0.001x size (microscopic, hides RRPartOwner)
-    local stealthSize = CONFIG.USE_STEALTH_PARTS and (partData.Size * 0.001) or partData.Size
-    
-    local part = ep:InvokeServer("CreatePart", "Normal", cf, workspace)
-    if not part then return nil end
-    
-    -- Claim ownership
-    local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
-    local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
-    EscalateEvent:FireServer(PartOwnership, {part})
-    
-    -- Wait for ownership
-    local timeout = 0
-    repeat 
-        task.wait(0.01)
-        timeout = timeout + 0.01
-    until part:FindFirstChild("RRPartOwner") or timeout > 1
-    
-    if not part:FindFirstChild("RRPartOwner") then
-        part:Destroy()
-        return nil
-    end
-    
-    -- Set properties with stealth size
-    ep:InvokeServer("SyncResize", {{Part = part, Size = stealthSize, CFrame = cf}})
-    
-    if CONFIG.USE_STEALTH_PARTS then
-        -- Add mesh to compensate for tiny size (1000x scale)
-        syncAPI:Invoke("CreateMeshes", {{Part = part}})
-        task.wait(0.05)
-        
-        -- Set mesh to block shape with 1000x scale
-        syncAPI:Invoke("SyncMesh", {{
-            Part = part,
-            MeshType = Enum.MeshType.Brick,
-            Scale = Vector3.new(1000, 1000, 1000)
-        }})
-        
-        -- Update mesh scale dynamically during replication
-        part:SetAttribute("StealthMode", true)
-    end
-    
-    syncAPI:Invoke("SyncMaterial", {{Part = part, Transparency = 0, Material = Enum.Material.Sand}})
-    syncAPI:Invoke("SyncAnchor", {{Part = part, Anchored = true}})
-    syncAPI:Invoke("SyncColor", {{Part = part, UnionColoring = true, Color = Color3.fromRGB(163, 162, 165)}})
-    
-    -- Disable CastShadow using RemoteEvents
-    task.spawn(function()
-        task.wait(0.1)
-        pcall(function()
-            local RemoteEvents = RS:FindFirstChild("RemoteEvents")
-            if RemoteEvents and RemoteEvents:FindFirstChild("PropertyChanged") then
-                RemoteEvents.PropertyChanged:FireServer(part, "CastShadow", false)
-            end
-        end)
-    end)
-    
-    -- Make server part invisible on client side
-    part.Transparency = 1
-    part.CanCollide = false
-    
-    return part
+function BinaryReader:seek(pos)
+	self.pos = pos
 end
 
--- Batch update server parts with size and transparency
-local function batchUpdateServerParts(ep, syncAPI, partsData)
-    if not ep or not syncAPI or #partsData == 0 then return end
-    
-    local moveData = {}
-    local resizeData = {}
-    local meshUpdateData = {}
-    
-    for _, info in ipairs(partsData) do
-        if info.serverPart and info.serverPart.Parent and info.clientPart and info.clientPart.Parent then
-            -- Sync position
-            table.insert(moveData, {
-                Part = info.serverPart,
-                CFrame = info.clientPart.CFrame,
-            })
-            
-            -- Sync size (if using stealth mode, scale appropriately)
-            if CONFIG.USE_STEALTH_PARTS then
-                local stealthSize = info.clientPart.Size * 0.001
-                table.insert(resizeData, {
-                    Part = info.serverPart,
-                    Size = stealthSize,
-                    CFrame = info.clientPart.CFrame,
-                })
-                
-                -- Update mesh scale to match visual size
-                if info.serverPart:FindFirstChildOfClass("SpecialMesh") then
-                    table.insert(meshUpdateData, {
-                        Part = info.serverPart,
-                        MeshType = Enum.MeshType.Brick,
-                        Scale = Vector3.new(1000, 1000, 1000)
-                    })
-                end
-            else
-                table.insert(resizeData, {
-                    Part = info.serverPart,
-                    Size = info.clientPart.Size,
-                    CFrame = info.clientPart.CFrame,
-                })
-            end
-        end
-    end
-    
-    if #moveData > 0 then
-        pcall(function()
-            ep:InvokeServer("SyncMove", moveData)
-        end)
-    end
-    
-    if #resizeData > 0 then
-        pcall(function()
-            ep:InvokeServer("SyncResize", resizeData)
-        end)
-    end
-    
-    if #meshUpdateData > 0 then
-        pcall(function()
-            syncAPI:Invoke("SyncMesh", meshUpdateData)
-        end)
-    end
+function BinaryReader:tell()
+	return self.pos
 end
 
--- Destroy parts in tornado's path
-local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
-    if not ep then return end
-    
-    local partsToDestroy = {}
-    
-    -- Find all parts in radius
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" then
-            -- Skip player characters
-            local isCharacterPart = false
-            local ancestor = obj.Parent
-            while ancestor do
-                if ancestor:IsA("Model") and Players:GetPlayerFromCharacter(ancestor) then
-                    isCharacterPart = true
-                    break
-                end
-                ancestor = ancestor.Parent
-            end
-            
-            if not isCharacterPart then
-                -- Check distance
-                local distance = (obj.Position - centerPos).Magnitude
-                if distance <= radius then
-                    table.insert(partsToDestroy, obj)
-                end
-            end
-        end
-    end
-    
-    -- Destroy parts using group/ungroup method (most reliable)
-    if #partsToDestroy > 0 then
-        task.spawn(function()
-            -- Claim ownership first
-            local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
-            local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
-            pcall(function()
-                EscalateEvent:FireServer(PartOwnership, partsToDestroy)
-            end)
-            
-            task.wait(0.1)
-            
-            -- Delete parts one by one
-            for _, part in ipairs(partsToDestroy) do
-                if part and part.Parent then
-                    pcall(function()
-                        -- Method 1: Group then ungroup (claims ownership and deletes)
-                        ep:InvokeServer("CreateGroup", "Model", workspace, {part})
-                        task.wait(0.02)
-                        ep:InvokeServer("Ungroup", {part})
-                    end)
-                end
-            end
-            
-            print("🌪️ Destroyed", #partsToDestroy, "parts in tornado path!")
-        end)
-    end
+function BinaryReader:readBytes(n)
+	if self.pos + n - 1 > self.length then
+		error("Read beyond end of data")
+	end
+	local bytes = {}
+	for i = 1, n do
+		bytes[i] = string.byte(self.data, self.pos)
+		self.pos = self.pos + 1
+	end
+	return bytes
 end
 
--- Main tornado spawn function
-local function spawnTornado(spawnCF, forwardDirection)
-    local ep, syncAPI = getEndpoints()
-    if not ep or not syncAPI then return end
-    
-    print("Spawning tornado at:", spawnCF.Position)
-    print("Build center:", BUILD_CENTER)
-    
-    -- Raycast down to find ground
-    local rayOrigin = spawnCF.Position
-    local rayDirection = Vector3.new(0, -1000, 0)
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {character}
-    
-    local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-    local groundY = rayResult and rayResult.Position.Y or spawnCF.Position.Y
-    
-    -- Spawn tornado at ground level + height offset
-    local finalSpawnPos = Vector3.new(spawnCF.Position.X, groundY + CONFIG.SPAWN_HEIGHT, spawnCF.Position.Z)
-    local finalSpawnCF = CFrame.new(finalSpawnPos) * (spawnCF - spawnCF.Position)
-    
-    print("Ground detected at Y:", groundY, "Spawning at Y:", finalSpawnPos.Y)
-    
-    -- Create invisible main root at spawn position (ANCHORED to prevent sinking)
-    local mainRoot = Instance.new("Part")
-    mainRoot.Name = "TornadoRoot"
-    mainRoot.Size = Vector3.new(1, 1, 1)
-    mainRoot.CFrame = finalSpawnCF
-    mainRoot.Transparency = 1
-    mainRoot.Anchored = true  -- ANCHORED so it stays at exact position
-    mainRoot.CanCollide = false
-    mainRoot.Parent = workspace
-    
-    -- Create all client parts with group tracking
-    local clientParts = {}
-    local serverParts = {}
-    local partsByGroup = {BottomRing = {}, TopRing = {}, Core = {}}
-    
-    for i, partData in ipairs(TORNADO_DATA) do
-        -- Calculate relative position from build center
-        local relativePos = partData.Position - BUILD_CENTER
-        local partCF = spawnCF * CFrame.new(relativePos) * partData.Rotation
-        
-        -- Create client part (FULLY VISIBLE - transparency 0)
-        local clientPart = Instance.new("Part")
-        clientPart.Name = "TornadoPart_" .. i
-        clientPart.Size = partData.Size
-        clientPart.CFrame = partCF
-        clientPart.Transparency = 0  -- FULLY VISIBLE
-        clientPart.Material = Enum.Material.Sand
-        clientPart.Color = Color3.fromRGB(163, 162, 165)
-        clientPart.TopSurface = Enum.SurfaceType.Smooth
-        clientPart.BottomSurface = Enum.SurfaceType.Smooth
-        clientPart.Anchored = true
-        clientPart.CanCollide = false
-        clientPart.CastShadow = false  -- No shadows
-        clientPart.Parent = workspace
-        
-        -- Store part info with group, relative position, and original properties
-        local partInfo = {
-            part = clientPart,
-            relativePos = relativePos,
-            rotation = partData.Rotation,
-            group = partData.Group,
-            baseSize = partData.Size,
-            baseTransparency = 0,  -- Client parts stay at 0 transparency
-        }
-        
-        table.insert(clientParts, partInfo)
-        table.insert(partsByGroup[partData.Group], partInfo)
-        
-        -- Store placeholder for server part
-        local serverPartInfo = {
-            clientPart = clientPart,
-            serverPart = nil,
-            partData = partData,
-        }
-        table.insert(serverParts, serverPartInfo)
-        
-        -- Create server part in background
-        task.spawn(function()
-            local serverPart = createServerPart(ep, syncAPI, partData, spawnCF)
-            if serverPart then
-                serverPartInfo.serverPart = serverPart
-                print("Server part created:", i, "/", #TORNADO_DATA)
-            else
-                warn("Failed to create server part:", i)
-            end
-        end)
-    end
-    
-    print("Client tornado spawned with", #clientParts, "parts")
-    
-    -- Wait a bit for server parts to be created
-    task.wait(0.5)
-    
-    -- Count successful server parts
-    local serverPartCount = 0
-    for _, info in ipairs(serverParts) do
-        if info.serverPart and info.serverPart.Parent then
-            serverPartCount = serverPartCount + 1
-        end
-    end
-    print("Server parts created:", serverPartCount, "/", #TORNADO_DATA)
-    
-    -- Store initial Y for comparison
-    local initialY = finalSpawnPos.Y
-    
-    -- Animation loop
-    local startTime = tick()
-    local lastReplicationTime = 0
-    local replicationInterval = 1 / CONFIG.REPLICATION_RATE
-    local destructionFrameCounter = 0
-    
-    local mainRotation = 0
-    local bottomRotation = 0
-    local topRotation = 0
-    local coreRotation = 0
-    local distanceTraveled = 0
-    
-    local connection
-    connection = RunService.Heartbeat:Connect(function(dt)
-        local elapsedTime = tick() - startTime
-        
-        -- Check lifetime (skip if debug mode)
-        if elapsedTime > CONFIG.TORNADO_LIFETIME then
-            connection:Disconnect()
-            
-            -- Cleanup
-            mainRoot:Destroy()
-            for _, partInfo in ipairs(clientParts) do
-                if partInfo.part and partInfo.part.Parent then
-                    partInfo.part:Destroy()
-                end
-            end
-            
-            if ep and #serverParts > 0 then
-                local toRemove = {}
-                for _, info in ipairs(serverParts) do
-                    if info.serverPart and info.serverPart.Parent then
-                        table.insert(toRemove, info.serverPart)
-                    end
-                end
-                if #toRemove > 0 then
-                    pcall(function()
-                        ep:InvokeServer("Remove", toRemove)
-                    end)
-                end
-            end
-            
-            print("Tornado despawned")
-            return
-        end
-        
-        -- Update rotations (accelerated speeds)
-        bottomRotation = bottomRotation + (CONFIG.BOTTOM_RING_SPIN * dt)
-        topRotation = topRotation + (CONFIG.TOP_RING_SPIN * dt)
-        coreRotation = coreRotation + (CONFIG.CORE_SPIN * dt)
-        
-        -- Calculate dynamic wobble offset
-        local wobbleX = math.sin(elapsedTime * CONFIG.WOBBLE_SPEED) * CONFIG.WOBBLE_INTENSITY
-        local wobbleZ = math.cos(elapsedTime * CONFIG.WOBBLE_SPEED * 1.3) * CONFIG.WOBBLE_INTENSITY
-        
-        -- Calculate vertical pulse
-        local verticalPulse = math.sin(elapsedTime * CONFIG.VERTICAL_PULSE_SPEED) * CONFIG.VERTICAL_PULSE
-        
-        -- Move forward in spawn direction
-        distanceTraveled = distanceTraveled + (CONFIG.FORWARD_SPEED * dt)
-        local forwardOffset = forwardDirection * distanceTraveled
-        
-        -- Update main root position with all dynamic movements
-        local newPos = Vector3.new(
-            finalSpawnPos.X + wobbleX + forwardOffset.X,
-            finalSpawnPos.Y + verticalPulse,
-            finalSpawnPos.Z + wobbleZ + forwardOffset.Z
-        )
-        mainRoot.CFrame = CFrame.new(newPos)
-        
-        -- Destroy parts in path (every N frames to reduce lag)
-        destructionFrameCounter = destructionFrameCounter + 1
-        if destructionFrameCounter >= CONFIG.DESTRUCTION_CHECK_RATE then
-            destructionFrameCounter = 0
-            destroyPartsInRadius(ep, syncAPI, newPos, CONFIG.DESTRUCTION_RADIUS)
-        end
-        
-        -- Get current main CFrame
-        local mainCF = mainRoot.CFrame
-        
-        -- Calculate size and transparency pulse multipliers
-        local sizePulse = 1 + (math.sin(elapsedTime * CONFIG.SIZE_PULSE_SPEED) * CONFIG.SIZE_PULSE_AMOUNT)
-        local transparencyPulse = math.sin(elapsedTime * CONFIG.TRANSPARENCY_SPEED) * CONFIG.TRANSPARENCY_PULSE
-        
-        -- Apply multi-layer rotations with dynamic effects
-        for _, partInfo in ipairs(clientParts) do
-            if partInfo.part and partInfo.part.Parent then
-                local groupRotation = 0
-                local additionalScale = 1
-                
-                -- Different rotation speeds per group
-                if partInfo.group == "BottomRing" then
-                    groupRotation = bottomRotation
-                    additionalScale = 1 + (math.sin(elapsedTime * 2) * 0.1) -- Extra pulsing for bottom
-                elseif partInfo.group == "TopRing" then
-                    groupRotation = topRotation
-                    additionalScale = 1 + (math.cos(elapsedTime * 2.5) * 0.08) -- Different pulse for top
-                elseif partInfo.group == "Core" then
-                    groupRotation = coreRotation
-                end
-                
-                -- Calculate new position with group-specific rotation
-                local rotatedOffset = CFrame.Angles(0, groupRotation, 0) * partInfo.relativePos
-                
-                -- Apply rotation to both position AND orientation of the part
-                partInfo.part.CFrame = mainCF * CFrame.new(rotatedOffset) * CFrame.Angles(0, groupRotation, 0) * partInfo.rotation
-                
-                -- Apply dynamic size pulsing
-                local finalSize = partInfo.baseSize * sizePulse * additionalScale
-                partInfo.part.Size = finalSize
-                
-                -- Apply dynamic transparency pulsing
-                local finalTransparency = math.clamp(partInfo.baseTransparency + transparencyPulse, 0, 1)
-                partInfo.part.Transparency = finalTransparency
-            end
-        end
-        
-        -- Replicate to server at 75Hz
-        local currentTime = tick()
-        if currentTime - lastReplicationTime >= replicationInterval then
-            batchUpdateServerParts(ep, syncAPI, serverParts)
-            lastReplicationTime = currentTime
-        end
-    end)
+function BinaryReader:readUInt8()
+	return self:readBytes(1)[1]
 end
 
--- Create spawner tool
-local function createSpawnerTool()
-    local tool = Instance.new("Tool")
-    tool.Name = "Tornado Spawner"
-    tool.RequiresHandle = false
-    tool.CanBeDropped = false
-    
-    local handle = Instance.new("Part")
-    handle.Name = "Handle"
-    handle.Size = Vector3.new(0.5, 3, 0.5)
-    handle.Material = Enum.Material.Neon
-    handle.BrickColor = BrickColor.new("Cyan")
-    handle.CanCollide = false
-    handle.Parent = tool
-    
-    tool.Activated:Connect(function()
-        local char = player.Character
-        if not char then return end
-        
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        
-        -- Get forward direction from player's facing direction
-        local lookVector = hrp.CFrame.LookVector
-        local forwardDirection = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-        
-        -- Spawn in front of player at configured height
-        local spawnCF = hrp.CFrame * CFrame.new(0, CONFIG.SPAWN_HEIGHT, -CONFIG.SPAWN_DISTANCE)
-        spawnTornado(spawnCF, forwardDirection)
-    end)
-    
-    tool.Parent = backpack
+function BinaryReader:readInt8()
+	local val = self:readUInt8()
+	return val >= 128 and (val - 256) or val
 end
 
--- Initialize
-print("=== Tornado Wand DYNAMIC VERSION LOADED ===")
-print("Build center calculated:", BUILD_CENTER)
-createSpawnerTool()
-print("Equip 'Tornado Spawner' and click to spawn dynamic tornado")
-print("- Tornado lasts", CONFIG.TORNADO_LIFETIME, "seconds")
-print("- Tornado moves in the direction you're facing")
-print("- Destroys parts in", CONFIG.DESTRUCTION_RADIUS, "stud radius")
-print("- Features: Wobble, pulsing, forward movement, DESTRUCTION")
-print("- CLIENT: Fully visible (transparency = 0), no shadows")
-print("- SERVER: Fully visible to others (transparency = 0), invisible to you, no shadows")
-if CONFIG.USE_STEALTH_PARTS then
-    print("- STEALTH MODE: Parts use 0.001x size with 1000x mesh (invisible RRPartOwner)")
+function BinaryReader:readUInt16()
+	local b = self:readBytes(2)
+	return b[1] * 256 + b[2]
 end
 
+function BinaryReader:readInt16()
+	local val = self:readUInt16()
+	return val >= 32768 and (val - 65536) or val
+end
+
+function BinaryReader:readUInt32()
+	local b = self:readBytes(4)
+	return b[1] * 16777216 + b[2] * 65536 + b[3] * 256 + b[4]
+end
+
+function BinaryReader:readInt32()
+	local val = self:readUInt32()
+	return val >= 2147483648 and (val - 4294967296) or val
+end
+
+function BinaryReader:readFixed()
+	return self:readInt32() / 65536
+end
+
+function BinaryReader:readString(n)
+	local bytes = self:readBytes(n)
+	local str = ""
+	for i = 1, n do
+		str = str .. string.char(bytes[i])
+	end
+	return str
+end
+
+-- ============================================================================
+-- TTF PARSER
+-- ============================================================================
+
+local TTFParser = {}
+TTFParser.__index = TTFParser
+
+function TTFParser.new(data)
+	local self = setmetatable({}, TTFParser)
+	self.reader = BinaryReader.new(data)
+	self.tables = {}
+	self:parseHeader()
+	self:parseTableDirectory()
+	return self
+end
+
+function TTFParser:parseHeader()
+	local reader = self.reader
+	reader:seek(1)
+	
+	self.version = reader:readUInt32()
+	self.numTables = reader:readUInt16()
+	self.searchRange = reader:readUInt16()
+	self.entrySelector = reader:readUInt16()
+	self.rangeShift = reader:readUInt16()
+end
+
+function TTFParser:parseTableDirectory()
+	local reader = self.reader
+	
+	for i = 1, self.numTables do
+		local tag = reader:readString(4)
+		local checksum = reader:readUInt32()
+		local offset = reader:readUInt32()
+		local length = reader:readUInt32()
+		
+		self.tables[tag] = {
+			offset = offset + 1,
+			length = length,
+			checksum = checksum
+		}
+	end
+end
+
+function TTFParser:getTable(tag)
+	return self.tables[tag]
+end
+
+function TTFParser:parseHead()
+	local headTable = self:getTable("head")
+	if not headTable then return nil end
+	
+	local reader = self.reader
+	reader:seek(headTable.offset)
+	
+	local head = {}
+	head.version = reader:readFixed()
+	head.fontRevision = reader:readFixed()
+	head.checksumAdjustment = reader:readUInt32()
+	head.magicNumber = reader:readUInt32()
+	head.flags = reader:readUInt16()
+	head.unitsPerEm = reader:readUInt16()
+	
+	reader:readBytes(16) -- skip dates
+	
+	head.xMin = reader:readInt16()
+	head.yMin = reader:readInt16()
+	head.xMax = reader:readInt16()
+	head.yMax = reader:readInt16()
+	head.macStyle = reader:readUInt16()
+	head.lowestRecPPEM = reader:readUInt16()
+	head.fontDirectionHint = reader:readInt16()
+	head.indexToLocFormat = reader:readInt16()
+	head.glyphDataFormat = reader:readInt16()
+	
+	return head
+end
+
+function TTFParser:parseMaxp()
+	local maxpTable = self:getTable("maxp")
+	if not maxpTable then return nil end
+	
+	local reader = self.reader
+	reader:seek(maxpTable.offset)
+	
+	local maxp = {}
+	maxp.version = reader:readFixed()
+	maxp.numGlyphs = reader:readUInt16()
+	
+	return maxp
+end
+
+function TTFParser:parseLoca()
+	local locaTable = self:getTable("loca")
+	if not locaTable then return nil end
+	
+	local head = self:parseHead()
+	local maxp = self:parseMaxp()
+	if not head or not maxp then return nil end
+	
+	local reader = self.reader
+	reader:seek(locaTable.offset)
+	
+	local loca = {}
+	local format = head.indexToLocFormat
+	
+	for i = 0, maxp.numGlyphs do
+		if format == 0 then
+			loca[i] = reader:readUInt16() * 2
+		else
+			loca[i] = reader:readUInt32()
+		end
+	end
+	
+	return loca
+end
+
+function TTFParser:parseCmap()
+	local cmapTable = self:getTable("cmap")
+	if not cmapTable then return nil end
+	
+	local reader = self.reader
+	reader:seek(cmapTable.offset)
+	
+	local version = reader:readUInt16()
+	local numTables = reader:readUInt16()
+	
+	local bestTable = nil
+	local bestScore = -1
+	
+	for i = 1, numTables do
+		local platformID = reader:readUInt16()
+		local encodingID = reader:readUInt16()
+		local offset = reader:readUInt32()
+		
+		local score = 0
+		if platformID == 3 and encodingID == 1 then
+			score = 100
+		elseif platformID == 0 and encodingID == 3 then
+			score = 90
+		elseif platformID == 3 and encodingID == 10 then
+			score = 80
+		end
+		
+		if score > bestScore then
+			bestScore = score
+			bestTable = {offset = cmapTable.offset + offset}
+		end
+	end
+	
+	if not bestTable then return nil end
+	
+	reader:seek(bestTable.offset)
+	local format = reader:readUInt16()
+	
+	local cmap = {}
+	
+	if format == 4 then
+		local length = reader:readUInt16()
+		local language = reader:readUInt16()
+		local segCountX2 = reader:readUInt16()
+		local segCount = segCountX2 / 2
+		local searchRange = reader:readUInt16()
+		local entrySelector = reader:readUInt16()
+		local rangeShift = reader:readUInt16()
+		
+		local endCode = {}
+		for i = 1, segCount do
+			endCode[i] = reader:readUInt16()
+		end
+		
+		reader:readUInt16() -- reserved
+		
+		local startCode = {}
+		for i = 1, segCount do
+			startCode[i] = reader:readUInt16()
+		end
+		
+		local idDelta = {}
+		for i = 1, segCount do
+			idDelta[i] = reader:readInt16()
+		end
+		
+		local idRangeOffsetStart = reader:tell()
+		local idRangeOffset = {}
+		for i = 1, segCount do
+			idRangeOffset[i] = reader:readUInt16()
+		end
+		
+		for i = 1, segCount do
+			local endChar = endCode[i]
+			local startChar = startCode[i]
+			
+			if startChar ~= 65535 then
+				for c = startChar, endChar do
+					local glyphIndex
+					
+					if idRangeOffset[i] == 0 then
+						glyphIndex = (c + idDelta[i]) % 65536
+					else
+						local offset = idRangeOffsetStart + (i - 1) * 2 + idRangeOffset[i] + (c - startChar) * 2
+						reader:seek(offset)
+						glyphIndex = reader:readUInt16()
+						if glyphIndex ~= 0 then
+							glyphIndex = (glyphIndex + idDelta[i]) % 65536
+						end
+					end
+					
+					if glyphIndex ~= 0 then
+						cmap[c] = glyphIndex
+					end
+				end
+			end
+		end
+	end
+	
+	return cmap
+end
+
+function TTFParser:parseGlyph(glyphIndex)
+	local glyfTable = self:getTable("glyf")
+	if not glyfTable then return nil end
+	
+	local loca = self:parseLoca()
+	if not loca then return nil end
+	
+	local offset = loca[glyphIndex]
+	local nextOffset = loca[glyphIndex + 1]
+	
+	if offset == nextOffset then
+		return {contours = {}}
+	end
+	
+	local reader = self.reader
+	reader:seek(glyfTable.offset + offset)
+	
+	local glyph = {}
+	glyph.numberOfContours = reader:readInt16()
+	glyph.xMin = reader:readInt16()
+	glyph.yMin = reader:readInt16()
+	glyph.xMax = reader:readInt16()
+	glyph.yMax = reader:readInt16()
+	
+	if glyph.numberOfContours < 0 then
+		return {contours = {}}
+	end
+	
+	local endPtsOfContours = {}
+	for i = 1, glyph.numberOfContours do
+		endPtsOfContours[i] = reader:readUInt16()
+	end
+	
+	local instructionLength = reader:readUInt16()
+	reader:readBytes(instructionLength)
+	
+	local numPoints = endPtsOfContours[glyph.numberOfContours] + 1
+	
+	local flags = {}
+	local i = 0
+	while i < numPoints do
+		local flag = reader:readUInt8()
+		flags[i] = flag
+		i = i + 1
+		
+		if bit32.band(flag, 0x08) ~= 0 then
+			local repeatCount = reader:readUInt8()
+			for j = 1, repeatCount do
+				flags[i] = flag
+				i = i + 1
+			end
+		end
+	end
+	
+	local xCoordinates = {}
+	local x = 0
+	for i = 0, numPoints - 1 do
+		local flag = flags[i]
+		local xShort = bit32.band(flag, 0x02) ~= 0
+		local xSame = bit32.band(flag, 0x10) ~= 0
+		
+		if xShort then
+			local val = reader:readUInt8()
+			if xSame then
+				x = x + val
+			else
+				x = x - val
+			end
+		elseif not xSame then
+			x = x + reader:readInt16()
+		end
+		
+		xCoordinates[i] = x
+	end
+	
+	local yCoordinates = {}
+	local y = 0
+	for i = 0, numPoints - 1 do
+		local flag = flags[i]
+		local yShort = bit32.band(flag, 0x04) ~= 0
+		local ySame = bit32.band(flag, 0x20) ~= 0
+		
+		if yShort then
+			local val = reader:readUInt8()
+			if ySame then
+				y = y + val
+			else
+				y = y - val
+			end
+		elseif not ySame then
+			y = y + reader:readInt16()
+		end
+		
+		yCoordinates[i] = y
+	end
+	
+	local contours = {}
+	local startIdx = 0
+	
+	for i = 1, glyph.numberOfContours do
+		local endIdx = endPtsOfContours[i]
+		local contour = {}
+		
+		for j = startIdx, endIdx do
+			local onCurve = bit32.band(flags[j], 0x01) ~= 0
+			table.insert(contour, {
+				x = xCoordinates[j],
+				y = yCoordinates[j],
+				onCurve = onCurve
+			})
+		end
+		
+		table.insert(contours, contour)
+		startIdx = endIdx + 1
+	end
+	
+	glyph.contours = contours
+	return glyph
+end
+
+function TTFParser:getGlyphContours(char)
+	local cmap = self:parseCmap()
+	if not cmap then return nil end
+	
+	local charCode = string.byte(char)
+	local glyphIndex = cmap[charCode]
+	
+	if not glyphIndex then return nil end
+	
+	return self:parseGlyph(glyphIndex)
+end
+
+-- ============================================================================
+-- CONTOUR TO SEGMENTS CONVERTER
+-- ============================================================================
+
+local function quadraticBezier(p0, p1, p2, segments)
+	local points = {}
+	for i = 0, segments do
+		local t = i / segments
+		local mt = 1 - t
+		local x = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x
+		local y = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+		table.insert(points, {x = x, y = y})
+	end
+	return points
+end
+
+local function convertContoursToSegments(contours, segments)
+	if not contours then return {} end
+	
+	local result = {}
+	
+	for _, contour in ipairs(contours) do
+		local points = {}
+		local n = #contour
+		
+		if n == 0 then continue end
+		
+		for i = 1, n do
+			local curr = contour[i]
+			local next = contour[i % n + 1]
+			
+			if curr.onCurve then
+				table.insert(points, {x = curr.x, y = curr.y})
+				
+				if not next.onCurve then
+					local nextNext = contour[(i + 1) % n + 1]
+					
+					local endPoint
+					if nextNext.onCurve then
+						endPoint = nextNext
+					else
+						endPoint = {
+							x = (next.x + nextNext.x) / 2,
+							y = (next.y + nextNext.y) / 2,
+							onCurve = true
+						}
+					end
+					
+					local bezierPoints = quadraticBezier(curr, next, endPoint, segments)
+					for j = 2, #bezierPoints do
+						table.insert(points, bezierPoints[j])
+					end
+				end
+			end
+		end
+		
+		if #points > 0 then
+			table.insert(result, points)
+		end
+	end
+	
+	return result
+end
+
+local function normalizeGlyph(glyph, segments)
+	if not glyph or not glyph.contours then return nil end
+	
+	local contours = convertContoursToSegments(glyph.contours, segments or 16)
+	
+	if #contours == 0 then return nil end
+	
+	local minX, maxX = math.huge, -math.huge
+	local minY, maxY = math.huge, -math.huge
+	
+	for _, contour in ipairs(contours) do
+		for _, point in ipairs(contour) do
+			minX = math.min(minX, point.x)
+			maxX = math.max(maxX, point.x)
+			minY = math.min(minY, point.y)
+			maxY = math.max(maxY, point.y)
+		end
+	end
+	
+	local width = maxX - minX
+	local height = maxY - minY
+	
+	if width == 0 or height == 0 then return nil end
+	
+	-- DON'T normalize - keep original coordinates for proper sizing
+	return {
+		contours = contours,
+		width = width,
+		height = height,
+		minX = minX,
+		minY = minY,
+		maxX = maxX,
+		maxY = maxY
+	}
+end
+
+-- ============================================================================
+-- F3X BUILDER
+-- ============================================================================
+
+local function getF3XEndpoint()
+	local bt = workspace[player.Name]:FindFirstChild("Building Tools")
+	if not bt then
+		warn("F3X Building Tools not equipped!")
+		return nil
+	end
+	
+	local syncAPI = bt:FindFirstChild("SyncAPI")
+	if not syncAPI then
+		warn("F3X SyncAPI not found!")
+		return nil
+	end
+	
+	local endpoint = syncAPI:FindFirstChild("ServerEndpoint")
+	if not endpoint then
+		warn("F3X ServerEndpoint not found!")
+		return nil
+	end
+	
+	return endpoint
+end
+
+local function claimOwnership(parts)
+	local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+	local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+	
+	EscalateEvent:FireServer(PartOwnership, parts)
+	
+	for _, part in ipairs(parts) do
+		local timeout = 0
+		while not part:FindFirstChild("RRPartOwner") and timeout < 100 do
+			task.wait(0.01)
+			timeout = timeout + 1
+		end
+	end
+end
+
+local function buildGlyph(glyphData, position, scale, thickness, color, material)
+	local endpoint = getF3XEndpoint()
+	if not endpoint then return end
+	
+	if not glyphData or not glyphData.contours then return end
+	
+	local parts = {}
+	local partData = {}
+	
+	-- Collect all part data first
+	for _, contour in ipairs(glyphData.contours) do
+		for i = 1, #contour - 1 do
+			local p1 = contour[i]
+			local p2 = contour[i + 1]
+			
+			local x1 = p1.x * scale
+			local y1 = p1.y * scale
+			local x2 = p2.x * scale
+			local y2 = p2.y * scale
+			
+			local midX = (x1 + x2) / 2
+			local midY = (y1 + y2) / 2
+			
+			local length = math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
+			local angle = math.atan2(y2 - y1, x2 - x1)
+			
+			local cf = CFrame.new(
+				position.X + midX,
+				position.Y + midY,
+				position.Z
+			) * CFrame.Angles(0, 0, angle)
+			
+			table.insert(partData, {
+				cf = cf,
+				length = length
+			})
+		end
+	end
+	
+	-- Create all parts in parallel (don't wait for each one)
+	local threads = {}
+	for i, data in ipairs(partData) do
+		threads[i] = task.spawn(function()
+			local success, part = pcall(function()
+				return endpoint:InvokeServer("CreatePart", "Normal", data.cf, workspace)
+			end)
+			if success and part then
+				parts[i] = part
+			end
+		end)
+	end
+	
+	-- Wait for all threads to complete
+	for _, thread in ipairs(threads) do
+		while coroutine.status(thread) ~= "dead" do
+			task.wait()
+		end
+	end
+	
+	-- Remove nil entries
+	local cleanParts = {}
+	for _, part in ipairs(parts) do
+		if part then
+			table.insert(cleanParts, part)
+		end
+	end
+	parts = cleanParts
+	
+	if #parts > 0 then
+		claimOwnership(parts)
+		
+		-- Batch resize
+		local resizeBatch = {}
+		for i, part in ipairs(parts) do
+			table.insert(resizeBatch, {
+				Part = part,
+				Size = Vector3.new(partData[i].length, thickness, thickness),
+				CFrame = partData[i].cf
+			})
+		end
+		endpoint:InvokeServer("SyncResize", resizeBatch)
+		
+		-- Batch color
+		local colorBatch = {}
+		for _, part in ipairs(parts) do
+			table.insert(colorBatch, {
+				Part = part,
+				Color = color
+			})
+		end
+		endpoint:InvokeServer("SyncColor", colorBatch)
+		
+		-- Batch material
+		local materialBatch = {}
+		for _, part in ipairs(parts) do
+			table.insert(materialBatch, {
+				Part = part,
+				Material = material
+			})
+		end
+		endpoint:InvokeServer("SyncMaterial", materialBatch)
+	end
+end
+
+-- ============================================================================
+-- GUI
+-- ============================================================================
+
+local function createGUI()
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "VectorTextBuilder"
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = player.PlayerGui
+	
+	local frame = Instance.new("Frame")
+	frame.Name = "MainFrame"
+	frame.Size = UDim2.new(0, 400, 0, 500)
+	frame.Position = UDim2.new(0.5, -200, 0.5, -250)
+	frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	frame.BorderSizePixel = 0
+	frame.Parent = screenGui
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = frame
+	
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.Size = UDim2.new(1, -20, 0, 30)
+	title.Position = UDim2.new(0, 10, 0, 10)
+	title.BackgroundTransparency = 1
+	title.Text = "3D Vector Text Builder"
+	title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	title.TextSize = 18
+	title.Font = Enum.Font.GothamBold
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = frame
+	
+	local fontPathLabel = Instance.new("TextLabel")
+	fontPathLabel.Size = UDim2.new(1, -20, 0, 20)
+	fontPathLabel.Position = UDim2.new(0, 10, 0, 50)
+	fontPathLabel.BackgroundTransparency = 1
+	fontPathLabel.Text = "Font File Path (in workspace folder):"
+	fontPathLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	fontPathLabel.TextSize = 14
+	fontPathLabel.Font = Enum.Font.Gotham
+	fontPathLabel.TextXAlignment = Enum.TextXAlignment.Left
+	fontPathLabel.Parent = frame
+	
+	local fontPathBox = Instance.new("TextBox")
+	fontPathBox.Name = "FontPathBox"
+	fontPathBox.Size = UDim2.new(1, -20, 0, 30)
+	fontPathBox.Position = UDim2.new(0, 10, 0, 75)
+	fontPathBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	fontPathBox.BorderSizePixel = 0
+	fontPathBox.Text = "FontProcessor/CourierNew.ttf"
+	fontPathBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	fontPathBox.TextSize = 14
+	fontPathBox.Font = Enum.Font.Code
+	fontPathBox.PlaceholderText = "FontProcessor/font.ttf"
+	fontPathBox.ClearTextOnFocus = false
+	fontPathBox.Parent = frame
+	
+	local fontCorner = Instance.new("UICorner")
+	fontCorner.CornerRadius = UDim.new(0, 4)
+	fontCorner.Parent = fontPathBox
+	
+	local textLabel = Instance.new("TextLabel")
+	textLabel.Size = UDim2.new(1, -20, 0, 20)
+	textLabel.Position = UDim2.new(0, 10, 0, 115)
+	textLabel.BackgroundTransparency = 1
+	textLabel.Text = "Text to Build:"
+	textLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	textLabel.TextSize = 14
+	textLabel.Font = Enum.Font.Gotham
+	textLabel.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel.Parent = frame
+	
+	local textBox = Instance.new("TextBox")
+	textBox.Name = "TextBox"
+	textBox.Size = UDim2.new(1, -20, 0, 30)
+	textBox.Position = UDim2.new(0, 10, 0, 140)
+	textBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	textBox.BorderSizePixel = 0
+	textBox.Text = "HELLO"
+	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	textBox.TextSize = 14
+	textBox.Font = Enum.Font.Code
+	textBox.ClearTextOnFocus = false
+	textBox.Parent = frame
+	
+	local textCorner = Instance.new("UICorner")
+	textCorner.CornerRadius = UDim.new(0, 4)
+	textCorner.Parent = textBox
+	
+	local scaleLabel = Instance.new("TextLabel")
+	scaleLabel.Size = UDim2.new(1, -20, 0, 20)
+	scaleLabel.Position = UDim2.new(0, 10, 0, 180)
+	scaleLabel.BackgroundTransparency = 1
+	scaleLabel.Text = "Scale: 1.5"
+	scaleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	scaleLabel.TextSize = 14
+	scaleLabel.Font = Enum.Font.Gotham
+	scaleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	scaleLabel.Parent = frame
+	
+	local scaleSlider = Instance.new("TextBox")
+	scaleSlider.Name = "ScaleSlider"
+	scaleSlider.Size = UDim2.new(1, -20, 0, 30)
+	scaleSlider.Position = UDim2.new(0, 10, 0, 205)
+	scaleSlider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	scaleSlider.BorderSizePixel = 0
+	scaleSlider.Text = "1.5"
+	scaleSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+	scaleSlider.TextSize = 14
+	scaleSlider.Font = Enum.Font.Gotham
+	scaleSlider.Parent = frame
+	
+	local scaleCorner = Instance.new("UICorner")
+	scaleCorner.CornerRadius = UDim.new(0, 4)
+	scaleCorner.Parent = scaleSlider
+	
+	local thicknessLabel = Instance.new("TextLabel")
+	thicknessLabel.Size = UDim2.new(1, -20, 0, 20)
+	thicknessLabel.Position = UDim2.new(0, 10, 0, 245)
+	thicknessLabel.BackgroundTransparency = 1
+	thicknessLabel.Text = "Thickness: 0.2"
+	thicknessLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	thicknessLabel.TextSize = 14
+	thicknessLabel.Font = Enum.Font.Gotham
+	thicknessLabel.TextXAlignment = Enum.TextXAlignment.Left
+	thicknessLabel.Parent = frame
+	
+	local thicknessBox = Instance.new("TextBox")
+	thicknessBox.Name = "ThicknessBox"
+	thicknessBox.Size = UDim2.new(1, -20, 0, 30)
+	thicknessBox.Position = UDim2.new(0, 10, 0, 270)
+	thicknessBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	thicknessBox.BorderSizePixel = 0
+	thicknessBox.Text = "0.2"
+	thicknessBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	thicknessBox.TextSize = 14
+	thicknessBox.Font = Enum.Font.Gotham
+	thicknessBox.Parent = frame
+	
+	local thickCorner = Instance.new("UICorner")
+	thickCorner.CornerRadius = UDim.new(0, 4)
+	thickCorner.Parent = thicknessBox
+	
+	local spacingLabel = Instance.new("TextLabel")
+	spacingLabel.Size = UDim2.new(1, -20, 0, 20)
+	spacingLabel.Position = UDim2.new(0, 10, 0, 310)
+	spacingLabel.BackgroundTransparency = 1
+	spacingLabel.Text = "Letter Spacing: 0.8"
+	spacingLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	spacingLabel.TextSize = 14
+	spacingLabel.Font = Enum.Font.Gotham
+	spacingLabel.TextXAlignment = Enum.TextXAlignment.Left
+	spacingLabel.Parent = frame
+	
+	local spacingBox = Instance.new("TextBox")
+	spacingBox.Name = "SpacingBox"
+	spacingBox.Size = UDim2.new(1, -20, 0, 30)
+	spacingBox.Position = UDim2.new(0, 10, 0, 335)
+	spacingBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	spacingBox.BorderSizePixel = 0
+	spacingBox.Text = "0.8"
+	spacingBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	spacingBox.TextSize = 14
+	spacingBox.Font = Enum.Font.Gotham
+	spacingBox.Parent = frame
+	
+	local spaceCorner = Instance.new("UICorner")
+	spaceCorner.CornerRadius = UDim.new(0, 4)
+	spaceCorner.Parent = spacingBox
+	
+	local distanceLabel = Instance.new("TextLabel")
+	distanceLabel.Size = UDim2.new(1, -20, 0, 20)
+	distanceLabel.Position = UDim2.new(0, 10, 0, 375)
+	distanceLabel.BackgroundTransparency = 1
+	distanceLabel.Text = "Distance: 15"
+	distanceLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	distanceLabel.TextSize = 14
+	distanceLabel.Font = Enum.Font.Gotham
+	distanceLabel.TextXAlignment = Enum.TextXAlignment.Left
+	distanceLabel.Parent = frame
+	
+	local distanceBox = Instance.new("TextBox")
+	distanceBox.Name = "DistanceBox"
+	distanceBox.Size = UDim2.new(1, -20, 0, 30)
+	distanceBox.Position = UDim2.new(0, 10, 0, 400)
+	distanceBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	distanceBox.BorderSizePixel = 0
+	distanceBox.Text = "15"
+	distanceBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	distanceBox.TextSize = 14
+	distanceBox.Font = Enum.Font.Gotham
+	distanceBox.Parent = frame
+	
+	local distCorner = Instance.new("UICorner")
+	distCorner.CornerRadius = UDim.new(0, 4)
+	distCorner.Parent = distanceBox
+	
+	local buildButton = Instance.new("TextButton")
+	buildButton.Name = "BuildButton"
+	buildButton.Size = UDim2.new(1, -20, 0, 40)
+	buildButton.Position = UDim2.new(0, 10, 0, 445)
+	buildButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+	buildButton.BorderSizePixel = 0
+	buildButton.Text = "BUILD TEXT"
+	buildButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	buildButton.TextSize = 16
+	buildButton.Font = Enum.Font.GothamBold
+	buildButton.Parent = frame
+	
+	local buildCorner = Instance.new("UICorner")
+	buildCorner.CornerRadius = UDim.new(0, 6)
+	buildCorner.Parent = buildButton
+	
+	scaleSlider.FocusLost:Connect(function()
+		local val = tonumber(scaleSlider.Text) or 1.5
+		scaleLabel.Text = "Scale: " .. val
+	end)
+	
+	thicknessBox.FocusLost:Connect(function()
+		local val = tonumber(thicknessBox.Text) or 0.2
+		thicknessLabel.Text = "Thickness: " .. val
+	end)
+	
+	spacingBox.FocusLost:Connect(function()
+		local val = tonumber(spacingBox.Text) or 0.8
+		spacingLabel.Text = "Letter Spacing: " .. val
+	end)
+	
+	distanceBox.FocusLost:Connect(function()
+		local val = tonumber(distanceBox.Text) or 15
+		distanceLabel.Text = "Distance: " .. val
+	end)
+	
+	buildButton.MouseButton1Click:Connect(function()
+		local fontPath = fontPathBox.Text
+		local text = textBox.Text
+		local scale = tonumber(scaleSlider.Text) or 1.5
+		local thickness = tonumber(thicknessBox.Text) or 0.2
+		local spacing = tonumber(spacingBox.Text) or 0.8
+		local distance = tonumber(distanceBox.Text) or 15
+		
+		-- Check if file exists first
+		if not isfile(fontPath) then
+			warn("Font file not found: " .. fontPath)
+			warn("Please place your TTF file in the FontProcessor folder in your executor workspace")
+			return
+		end
+		
+		local success, fontData = pcall(function()
+			return readfile(fontPath)
+		end)
+		
+		if not success then
+			warn("Failed to read font file: " .. fontPath)
+			warn("Error: " .. tostring(fontData))
+			return
+		end
+		
+		local parser = TTFParser.new(fontData)
+		
+		local camera = workspace.CurrentCamera
+		local startPos = camera.CFrame.Position + camera.CFrame.LookVector * distance
+		
+		-- Get font metrics for proper scaling
+		local head = parser:parseHead()
+		local unitsPerEm = head and head.unitsPerEm or 2048
+		
+		-- Collect ALL glyphs and positions first
+		local allPartData = {}
+		local xOffset = 0
+		
+		for i = 1, #text do
+			local char = text:sub(i, i)
+			local glyph = parser:getGlyphContours(char)
+			
+			if glyph then
+				local normalized = normalizeGlyph(glyph, 16)
+				
+				if normalized then
+					local charPos = Vector3.new(
+						startPos.X + xOffset,
+						startPos.Y,
+						startPos.Z
+					)
+					
+					-- Calculate scale factor that preserves aspect ratio
+					-- Scale is based on font units, maintaining proper proportions
+					local fontScale = scale / unitsPerEm
+					
+					for _, contour in ipairs(normalized.contours) do
+						for j = 1, #contour - 1 do
+							local p1 = contour[j]
+							local p2 = contour[j + 1]
+							
+							-- Use actual font coordinates (no normalization to 0-1)
+							-- This preserves the aspect ratio and size relationships
+							local x1 = p1.x * fontScale
+							local y1 = p1.y * fontScale
+							local x2 = p2.x * fontScale
+							local y2 = p2.y * fontScale
+							
+							local midX = (x1 + x2) / 2
+							local midY = (y1 + y2) / 2
+							
+							local length = math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
+							local angle = math.atan2(y2 - y1, x2 - x1)
+							
+							local cf = CFrame.new(
+								charPos.X + midX,
+								charPos.Y + midY,
+								charPos.Z
+							) * CFrame.Angles(0, 0, angle)
+							
+							table.insert(allPartData, {
+								cf = cf,
+								length = length,
+								size = Vector3.new(length, thickness, thickness)
+							})
+						end
+					end
+					
+					-- Letter spacing based on actual glyph width
+					xOffset = xOffset + (normalized.width * fontScale) + spacing
+				end
+			end
+		end
+		
+		-- Now create ALL parts in parallel
+		local endpoint = getF3XEndpoint()
+		if not endpoint then
+			warn("F3X not found!")
+			return
+		end
+		
+		local parts = {}
+		local threads = {}
+		
+		for i, data in ipairs(allPartData) do
+			threads[i] = task.spawn(function()
+				local success, part = pcall(function()
+					return endpoint:InvokeServer("CreatePart", "Normal", data.cf, workspace)
+				end)
+				if success and part then
+					parts[i] = part
+				end
+			end)
+		end
+		
+		-- Wait for all parts to be created
+		for _, thread in ipairs(threads) do
+			while coroutine.status(thread) ~= "dead" do
+				task.wait()
+			end
+		end
+		
+		-- Remove nil entries
+		local cleanParts = {}
+		for _, part in ipairs(parts) do
+			if part then
+				table.insert(cleanParts, part)
+			end
+		end
+		parts = cleanParts
+		
+		if #parts > 0 then
+			-- Claim ownership
+			claimOwnership(parts)
+			
+			-- Batch resize
+			local resizeBatch = {}
+			for i, part in ipairs(parts) do
+				if allPartData[i] then
+					table.insert(resizeBatch, {
+						Part = part,
+						Size = allPartData[i].size,
+						CFrame = allPartData[i].cf
+					})
+				end
+			end
+			endpoint:InvokeServer("SyncResize", resizeBatch)
+			
+			-- Batch color
+			local colorBatch = {}
+			for _, part in ipairs(parts) do
+				table.insert(colorBatch, {
+					Part = part,
+					Color = Color3.new(0, 0, 0)
+				})
+			end
+			endpoint:InvokeServer("SyncColor", colorBatch)
+			
+			-- Batch material
+			local materialBatch = {}
+			for _, part in ipairs(parts) do
+				table.insert(materialBatch, {
+					Part = part,
+					Material = Enum.Material.SmoothPlastic
+				})
+			end
+			endpoint:InvokeServer("SyncMaterial", materialBatch)
+		end
+	end)
+	
+	local dragging = false
+	local dragInput, mousePos, framePos
+	
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			mousePos = input.Position
+			framePos = frame.Position
+			
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	
+	UIS.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			dragInput = input
+		end
+	end)
+	
+	UIS.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - mousePos
+			frame.Position = UDim2.new(
+				framePos.X.Scale,
+				framePos.X.Offset + delta.X,
+				framePos.Y.Scale,
+				framePos.Y.Offset + delta.Y
+			)
+		end
+	end)
+end
+
+createGUI()
