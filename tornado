@@ -367,21 +367,40 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
     
     local partsToDestroy = {}
     
+    -- Get MainMap folder to exclude
+    local mainMap = workspace:FindFirstChild("Terrain")
+    if mainMap then
+        mainMap = mainMap:FindFirstChild("Everything")
+        if mainMap then
+            mainMap = mainMap:FindFirstChild("MainMap")
+        end
+    end
+    
     -- Find all parts in radius
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" then
+        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" and obj.Name ~= "DebrisParticle" then
             -- Skip player characters
             local isCharacterPart = false
+            local isMainMapPart = false
             local ancestor = obj.Parent
+            
             while ancestor do
+                -- Check if part of player character
                 if ancestor:IsA("Model") and Players:GetPlayerFromCharacter(ancestor) then
                     isCharacterPart = true
                     break
                 end
+                
+                -- Check if part of MainMap
+                if mainMap and ancestor == mainMap then
+                    isMainMapPart = true
+                    break
+                end
+                
                 ancestor = ancestor.Parent
             end
             
-            if not isCharacterPart then
+            if not isCharacterPart and not isMainMapPart then
                 -- Check distance
                 local distance = (obj.Position - centerPos).Magnitude
                 if distance <= radius then
