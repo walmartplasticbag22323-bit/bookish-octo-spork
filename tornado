@@ -378,7 +378,7 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
     
     -- Find all parts in radius
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" and obj.Name ~= "DebrisParticle" then
+        if obj:IsA("BasePart") and obj.Name ~= "TornadoPart" and obj.Name ~= "TornadoRoot" and obj.Name ~= "DebrisParticle" and obj.Name ~= "Grass" then
             -- Skip player characters
             local isCharacterPart = false
             local isMainMapPart = false
