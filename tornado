@@ -56,6 +56,18 @@ local CONFIG = {
     DESTRUCTION_RADIUS = 30,     -- Radius to destroy parts
     DESTRUCTION_CHECK_RATE = 10, -- Check for parts to destroy every X frames
     USE_STEALTH_PARTS = true,    -- Use 0.001x size with 1000x mesh (invisible RRPartOwner)
+    
+    -- Vortex suction settings
+    VORTEX_RADIUS = 40,          -- Radius of suction effect
+    VORTEX_STRENGTH = 50,        -- Strength of suction pull
+    VORTEX_SPIRAL_SPEED = 8,     -- Speed of spiral rotation
+    VORTEX_LIFT_SPEED = 15,      -- Speed of upward movement
+    
+    -- Particle settings
+    PARTICLE_COUNT = 50,         -- Number of debris particles per tornado
+    PARTICLE_SPAWN_RATE = 0.1,   -- Spawn new particle every X seconds
+    PARTICLE_SIZE_MIN = 0.5,     -- Min particle size
+    PARTICLE_SIZE_MAX = 2,       -- Max particle size
 }
 
 -- Get F3X endpoints
@@ -249,6 +261,106 @@ local function batchUpdateServerParts(ep, syncAPI, partsData)
     end
 end
 
+-- Create vortex debris particle
+local function createDebrisParticle(tornadoRoot, sizeMultiplier)
+    local particle = Instance.new("Part")
+    particle.Name = "DebrisParticle"
+    particle.Shape = Enum.PartType.Ball
+    
+    -- Random size
+    local size = math.random(CONFIG.PARTICLE_SIZE_MIN * 10, CONFIG.PARTICLE_SIZE_MAX * 10) / 10 * sizeMultiplier
+    particle.Size = Vector3.new(size, size, size)
+    
+    -- Brown/dirt colors
+    local dirtColors = {
+        Color3.fromRGB(160, 82, 45),   -- Sienna
+        Color3.fromRGB(139, 90, 43),   -- Dark brown
+        Color3.fromRGB(101, 67, 33),   -- Dark dirt
+        Color3.fromRGB(205, 133, 63),  -- Peru
+        Color3.fromRGB(210, 180, 140), -- Tan
+    }
+    particle.Color = dirtColors[math.random(1, #dirtColors)]
+    
+    particle.Material = Enum.Material.Ground
+    particle.Transparency = 0.2
+    particle.CanCollide = false
+    particle.Anchored = true
+    particle.CastShadow = false
+    
+    -- Spawn at random position around tornado base
+    local angle = math.random() * math.pi * 2
+    local distance = math.random(CONFIG.VORTEX_RADIUS * 0.5, CONFIG.VORTEX_RADIUS) * sizeMultiplier
+    local groundOffset = -20 * sizeMultiplier -- Start near ground
+    
+    local spawnPos = tornadoRoot.Position + Vector3.new(
+        math.cos(angle) * distance,
+        groundOffset,
+        math.sin(angle) * distance
+    )
+    
+    particle.Position = spawnPos
+    particle.Parent = workspace
+    
+    -- Store particle data for animation
+    local particleData = {
+        part = particle,
+        angle = angle,
+        distance = distance,
+        height = groundOffset,
+        spiralSpeed = math.random(80, 120) / 100, -- Randomize spiral speed
+        liftSpeed = math.random(80, 120) / 100,   -- Randomize lift speed
+        startTime = tick(),
+        lifetime = math.random(30, 50) / 10,      -- 3-5 seconds lifetime
+    }
+    
+    return particleData
+end
+
+-- Update vortex particles (spiral suction effect)
+local function updateVortexParticles(particles, tornadoRoot, dt, sizeMultiplier)
+    local currentTime = tick()
+    
+    for i = #particles, 1, -1 do
+        local pData = particles[i]
+        
+        -- Check lifetime
+        if currentTime - pData.startTime > pData.lifetime then
+            if pData.part and pData.part.Parent then
+                pData.part:Destroy()
+            end
+            table.remove(particles, i)
+        else
+            if pData.part and pData.part.Parent then
+                -- Spiral inward and upward
+                pData.angle = pData.angle + (CONFIG.VORTEX_SPIRAL_SPEED * dt * pData.spiralSpeed)
+                pData.distance = pData.distance - (CONFIG.VORTEX_STRENGTH * dt * sizeMultiplier)
+                pData.height = pData.height + (CONFIG.VORTEX_LIFT_SPEED * dt * sizeMultiplier * pData.liftSpeed)
+                
+                -- Clamp distance (don't go below 0)
+                pData.distance = math.max(pData.distance, 0.5 * sizeMultiplier)
+                
+                -- Calculate new position (spiral around tornado)
+                local newPos = tornadoRoot.Position + Vector3.new(
+                    math.cos(pData.angle) * pData.distance,
+                    pData.height,
+                    math.sin(pData.angle) * pData.distance
+                )
+                
+                pData.part.Position = newPos
+                
+                -- Fade out as it rises
+                local lifetimeProgress = (currentTime - pData.startTime) / pData.lifetime
+                pData.part.Transparency = 0.2 + (lifetimeProgress * 0.8) -- Fade from 0.2 to 1.0
+                
+                -- Shrink as it rises
+                local shrinkFactor = 1 - (lifetimeProgress * 0.5) -- Shrink to 50% size
+                local size = pData.part.Size.X * 0.99 -- Gradually shrink
+                pData.part.Size = Vector3.new(size, size, size)
+            end
+        end
+    end
+end
+
 -- Destroy parts in tornado's path
 local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
     if not ep then return end
@@ -279,7 +391,7 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
         end
     end
     
-    -- Destroy parts using lightsaber method (group -> ungroup -> remove)
+    -- Destroy parts using optimized method (group -> ungroup -> remove)
     if #partsToDestroy > 0 then
         task.spawn(function()
             -- Claim ownership first
@@ -293,47 +405,41 @@ local function destroyPartsInRadius(ep, syncAPI, centerPos, radius)
             
             local deletedCount = 0
             
-            -- Delete parts one by one: group -> ungroup -> remove
+            -- Delete parts in parallel using spawn for each part
             for _, part in ipairs(partsToDestroy) do
                 if part and part.Parent then
-                    local success = pcall(function()
-                        -- Step 1: Group the part
-                        local groupArgs = {
-                            "CreateGroup",
-                            "Model",
-                            workspace,
-                            {part}
-                        }
-                        ep:InvokeServer(unpack(groupArgs))
-                        task.wait(0.03)
+                    task.spawn(function()
+                        local success = pcall(function()
+                            -- Step 1: Group the part
+                            ep:InvokeServer("CreateGroup", "Model", workspace, {part})
+                            task.wait(0.01) -- Minimal delay
+                            
+                            -- Step 2: Ungroup it (claims ownership)
+                            ep:InvokeServer("Ungroup", {part})
+                            task.wait(0.01) -- Minimal delay
+                            
+                            -- Step 3: Remove the part
+                            if part and part.Parent then
+                                ep:InvokeServer("Remove", {part})
+                                deletedCount = deletedCount + 1
+                            end
+                        end)
                         
-                        -- Step 2: Ungroup it
-                        local ungroupArgs = {
-                            "Ungroup",
-                            {part}
-                        }
-                        ep:InvokeServer(unpack(ungroupArgs))
-                        task.wait(0.02)
-                        
-                        -- Step 3: Remove the part
-                        if part and part.Parent then
-                            ep:InvokeServer("Remove", {part})
-                            deletedCount = deletedCount + 1
+                        if not success then
+                            -- Fallback: Try direct remove
+                            pcall(function()
+                                ep:InvokeServer("Remove", {part})
+                                deletedCount = deletedCount + 1
+                            end)
                         end
                     end)
                     
-                    if not success then
-                        -- Fallback: Try direct remove
-                        pcall(function()
-                            ep:InvokeServer("Remove", {part})
-                            deletedCount = deletedCount + 1
-                        end)
-                    end
-                    
-                    task.wait(0.05)
+                    task.wait(0.0001) -- Don't delay the sending process
                 end
             end
             
+            -- Wait a bit for all spawned tasks to complete
+            task.wait(0.3)
             print("🌪️ Destroyed", deletedCount, "/", #partsToDestroy, "parts in tornado path!")
         end)
     end
@@ -438,6 +544,19 @@ local function spawnTornado(spawnCF, forwardDirection, sizeMultiplier)
     
     print("Client tornado spawned with", #clientParts, "parts")
     
+    -- Create vortex particle system
+    local vortexParticles = {}
+    local lastParticleSpawnTime = 0
+    
+    -- Spawn initial batch of particles
+    for i = 1, CONFIG.PARTICLE_COUNT do
+        local pData = createDebrisParticle(mainRoot, sizeMultiplier)
+        table.insert(vortexParticles, pData)
+        task.wait(0.01) -- Stagger spawning
+    end
+    
+    print("Vortex system initialized with", #vortexParticles, "debris particles")
+    
     -- Wait a bit for server parts to be created
     task.wait(0.5)
     
@@ -472,6 +591,13 @@ local function spawnTornado(spawnCF, forwardDirection, sizeMultiplier)
         -- Check lifetime (skip if debug mode)
         if elapsedTime > CONFIG.TORNADO_LIFETIME then
             connection:Disconnect()
+            
+            -- Cleanup particles
+            for _, pData in ipairs(vortexParticles) do
+                if pData.part and pData.part.Parent then
+                    pData.part:Destroy()
+                end
+            end
             
             -- Cleanup
             mainRoot:Destroy()
@@ -528,6 +654,22 @@ local function spawnTornado(spawnCF, forwardDirection, sizeMultiplier)
         if destructionFrameCounter >= CONFIG.DESTRUCTION_CHECK_RATE then
             destructionFrameCounter = 0
             destroyPartsInRadius(ep, syncAPI, newPos, CONFIG.DESTRUCTION_RADIUS * sizeMultiplier)
+        end
+        
+        -- Update vortex particles
+        updateVortexParticles(vortexParticles, mainRoot, dt, sizeMultiplier)
+        
+        -- Spawn new particles periodically to maintain count
+        local currentTime = tick()
+        if currentTime - lastParticleSpawnTime >= CONFIG.PARTICLE_SPAWN_RATE then
+            lastParticleSpawnTime = currentTime
+            
+            -- Spawn new particles to replace destroyed ones
+            local particlesToSpawn = math.min(5, CONFIG.PARTICLE_COUNT - #vortexParticles)
+            for i = 1, particlesToSpawn do
+                local pData = createDebrisParticle(mainRoot, sizeMultiplier)
+                table.insert(vortexParticles, pData)
+            end
         end
         
         -- Get current main CFrame
@@ -642,6 +784,8 @@ print("- Destruction radius scales with size")
 print("- Features: Wobble, pulsing, forward movement, DESTRUCTION")
 print("- CLIENT: Fully visible (transparency = 0), no shadows")
 print("- SERVER: Fully visible to others (transparency = 0), invisible to you, no shadows")
+print("- VORTEX: Brown debris particles spiral upward into tornado")
+print("- Particles:", CONFIG.PARTICLE_COUNT, "debris pieces with realistic suction")
 if CONFIG.USE_STEALTH_PARTS then
     print("- STEALTH MODE: Parts use 0.001x size with 1000x mesh (invisible RRPartOwner)")
 end
