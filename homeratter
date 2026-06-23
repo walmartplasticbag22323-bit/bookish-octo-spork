@@ -1,0 +1,1043 @@
+--[[
+    R6 Rig Builder Script - DUAL PART SYSTEM 🌪️
+    Creates a controllable platform using dual-part replication
+    
+    DUAL-PART SYSTEM:
+    - Client part: Full size (9.5x9.5x0.1), visible, UNANCHORED, local only
+    - Server part: 0.001x size, invisible, replicated via F3X
+    - Client part: Handles ALL physics/movement
+    - Server part: Mirrors client part at 75Hz
+    - NO network ownership conflicts!
+    
+    LASER EYES TOOL:
+    - Stealth lasers: 0.001x size with 1000x mesh scale
+    - Persistent server parts (pooled at 0, 2000, 0 when unequipped)
+    - 30Hz visual updates, 10Hz destruction checks (optimized for performance)
+    - Region3 spatial queries instead of GetDescendants (MUCH faster)
+    - Max 10 parts destroyed per update to prevent lag
+    - Destroys parts along laser path (excludes MainMap, characters, fake character)
+    - Smart destruction: Won't destroy parts player is touching (except "Grass")
+    - Laser ignores fake character (rigModel) in raycasts
+    
+    FLY TOOL:
+    - Separate tool (auto-unequips after toggle)
+    - PC: Press Q key to toggle fly
+    - Mobile: Equip tool to toggle fly
+    - Controls FAKE character (platform), NOT real player
+    - BodyPosition + BodyGyro system
+    - Camera-relative movement with WASD/joystick
+    - Noclip enabled while flying on platform
+    
+    CHARACTER MOVEMENT:
+    - Player character can move freely while controlling platform
+    - No freezing or control conflicts
+    - Platform control is independent from player movement
+]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+local playerHumanoid = character:WaitForChild("Humanoid")
+
+-- Camera setup
+local currentCamera = workspace.CurrentCamera
+local originalCameraSubject = nil
+
+-- Get F3X API endpoints
+local bt = workspace[player.Name]["Building Tools"]
+local ep = bt.SyncAPI.ServerEndpoint
+local SyncAPI = bt.SyncAPI
+local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+
+-- Calculate spawn position 10 studs in front of player
+local spawnCFrame = hrp.CFrame + (hrp.CFrame.LookVector * 10)
+
+print("╔════════════════════════════════════════════════════╗")
+print("║    DUAL-PART PLATFORM BUILDER 🌪️                  ║")
+print("╚════════════════════════════════════════════════════╝")
+print("\n[INFO] Spawn Position:", spawnCFrame.Position)
+print("[INFO] Client part: 9.5x9.5x0.1 (local, unanchored)")
+print("[INFO] Server part: 0.001x size (replicated, invisible)")
+
+-- ============================================================================
+-- STEP 1: CREATE SERVER PART (0.001x size, replicated)
+-- ============================================================================
+print("\n[STEP 1/4] 🔥 Creating SERVER part...")
+
+local serverPart = ep:InvokeServer("CreatePart", "Normal", spawnCFrame, workspace)
+serverPart.Name = "Platform_Server"
+
+print("  ✓ Server part created")
+
+-- Claim ownership (NO DELAY - fire and forget!)
+pcall(function()
+    EscalateEvent:FireServer(PartOwnership, {serverPart})
+end)
+
+-- Wait for ownership ONLY
+repeat task.wait(0.01) until serverPart:FindFirstChild("RRPartOwner")
+
+print("  ✓ Ownership claimed")
+
+-- Set server part properties (0.001x size) - NO DELAYS between calls!
+local stealthSize = Vector3.new(9.5, 9.5, 0.1) * 0.001  -- 0.1 THICKNESS (Z axis)
+
+-- Batch all property changes together (NO WAITS!)
+pcall(function()
+    ep:InvokeServer("SyncResize", {{
+        Part = serverPart,
+        Size = stealthSize,
+        CFrame = spawnCFrame
+    }})
+end)
+
+pcall(function()
+    SyncAPI:Invoke("SyncColor", {{
+        Part = serverPart,
+        Color = Color3.new(0.8, 0.8, 0.8),
+        UnionColoring = true
+    }})
+end)
+
+pcall(function()
+    SyncAPI:Invoke("SyncMaterial", {{
+        Part = serverPart,
+        Material = Enum.Material.Plastic,
+        Reflectance = 0,
+        Transparency = 1  -- TRANSPARENT!
+    }})
+end)
+
+-- Keep server part ANCHORED (important for dual-part system!)
+pcall(function()
+    SyncAPI:Invoke("SyncAnchor", {{
+        Part = serverPart,
+        Anchored = true
+    }})
+end)
+
+-- Disable collision on server part - NO DELAY!
+pcall(function()
+    SyncAPI:Invoke("SyncCollision", {{
+        Part = serverPart,
+        CanCollide = false  -- No collision on server part
+    }})
+end)
+
+print("✅ Server part configured (0.001x, anchored, visible)")
+
+-- ============================================================================
+-- STEP 1.5: CREATE MESH + DECAL (NO DELAYS!)
+-- ============================================================================
+print("\n[STEP 1.5/5] 🔥 Creating mesh + decal on server part...")
+
+-- Create mesh via F3X API (NO WAIT!)
+local meshData = ep:InvokeServer("CreateMeshes", {{Part = serverPart}})
+
+-- Configure mesh with FIXED scale (1000, 1000, 10) - NO DELAY!
+pcall(function()
+    SyncAPI:Invoke("SyncMesh", {{
+        Part = serverPart,
+        MeshType = Enum.MeshType.Brick,
+        Scale = Vector3.new(1000, 1000, 10)  -- FIXED 1000, 1000, 10 scale!
+    }})
+end)
+
+-- Add decals on Front AND Back faces - NO DELAY!
+pcall(function()
+    ep:InvokeServer("CreateTextures", {{
+        Part = serverPart,
+        Face = Enum.NormalId.Front,
+        TextureType = "Decal"
+    }})
+end)
+
+pcall(function()
+    ep:InvokeServer("CreateTextures", {{
+        Part = serverPart,
+        Face = Enum.NormalId.Back,
+        TextureType = "Decal"
+    }})
+end)
+
+-- Configure decal textures (Front = 85621047219063, Back = 126371468061641) - NO DELAY!
+pcall(function()
+    ep:InvokeServer("SyncTexture", {{
+        Part = serverPart,
+        Face = Enum.NormalId.Front,
+        TextureType = "Decal",
+        Texture = "rbxassetid://85621047219063",
+        Transparency = 0
+    }})
+end)
+
+pcall(function()
+    ep:InvokeServer("SyncTexture", {{
+        Part = serverPart,
+        Face = Enum.NormalId.Back,
+        TextureType = "Decal",
+        Texture = "rbxassetid://126371468061641",
+        Transparency = 0
+    }})
+end)
+
+-- Make server part VISIBLE - NO DELAY!
+pcall(function()
+    SyncAPI:Invoke("SyncMaterial", {{
+        Part = serverPart,
+        Transparency = 1,  -- TRANSPARENT!
+        Material = Enum.Material.Plastic,
+        Reflectance = 0
+    }})
+end)
+
+print("✅ Server part mesh + decals created (1000, 1000, 10 scale + decals on front & back)")
+
+-- ============================================================================
+-- STEP 2: CREATE CLIENT PART (full size, local only)
+-- ============================================================================
+print("\n[STEP 2/4] 🔥 Creating CLIENT part...")
+
+local clientPart = Instance.new("Part")
+clientPart.Name = "Platform_Client"
+clientPart.Size = Vector3.new(9.5, 9.5, 0.1)  -- 0.1 THICKNESS (Z axis)
+clientPart.CFrame = spawnCFrame
+clientPart.Color = Color3.new(0.8, 0.8, 0.8)
+clientPart.Material = Enum.Material.Plastic
+clientPart.Transparency = 1  -- TRANSPARENT!
+clientPart.Anchored = false
+clientPart.CanCollide = true
+clientPart.Parent = workspace
+
+-- Add decals to client part (Front = 85621047219063, Back = 126371468061641)
+local clientDecalFront = Instance.new("Decal")
+clientDecalFront.Face = Enum.NormalId.Front
+clientDecalFront.Texture = "rbxassetid://85621047219063"
+clientDecalFront.Transparency = 0
+clientDecalFront.Parent = clientPart
+
+local clientDecalBack = Instance.new("Decal")
+clientDecalBack.Face = Enum.NormalId.Back
+clientDecalBack.Texture = "rbxassetid://126371468061641"
+clientDecalBack.Transparency = 0
+clientDecalBack.Parent = clientPart
+
+-- Disable shadows on both decals using PropertyChanged
+local RemoteEvents = RS:WaitForChild("RemoteEvents")
+local PropertyChanged = RemoteEvents:WaitForChild("PropertyChanged")
+
+-- Disable shadows on front decal
+PropertyChanged:FireServer(clientDecalFront, "LocalTransparencyModifier", 1)
+
+-- Disable shadows on back decal  
+PropertyChanged:FireServer(clientDecalBack, "LocalTransparencyModifier", 1)
+
+print("  ✓ Client part created (9.5x9.5x0.1, local only)")
+print("  ✓ Shadows disabled on decals")
+print("✅ Client part ready for control")
+
+-- ============================================================================
+-- STEP 3: SETUP REPLICATION LOOP (RenderStepped for smooth animation)
+-- ============================================================================
+print("\n[STEP 3/4] 🔥 Starting replication loop (RenderStepped - every frame)...")
+
+-- Use RenderStepped for MAXIMUM smoothness (syncs every frame before rendering)
+RunService.RenderStepped:Connect(function()
+    -- Sync server part to client part position EVERY FRAME
+    if clientPart and clientPart.Parent and serverPart and serverPart.Parent then
+        pcall(function()
+            ep:InvokeServer("SyncMove", {{
+                Part = serverPart,
+                CFrame = clientPart.CFrame
+            }})
+        end)
+    end
+end)
+
+print("✅ Replication loop active (75Hz)")
+
+-- ============================================================================
+-- STEP 3.5: CREATE GUI CONTROL PANEL
+-- ============================================================================
+print("\n[STEP 3.5/4] 🔥 Creating GUI control panel...")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "PlatformControlGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+-- Main frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 400, 0, 200)
+mainFrame.Position = UDim2.new(0.5, -200, 0, 20)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 12)
+mainCorner.Parent = mainFrame
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -20, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "🌪️ PLATFORM CONTROL"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 16
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Control toggle frame
+local controlFrame = Instance.new("Frame")
+controlFrame.Name = "ControlFrame"
+controlFrame.Size = UDim2.new(1, -20, 0, 56)
+controlFrame.Position = UDim2.new(0, 10, 0, 50)
+controlFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+controlFrame.BorderSizePixel = 0
+controlFrame.Parent = mainFrame
+
+local cfCorner = Instance.new("UICorner")
+cfCorner.CornerRadius = UDim.new(0, 8)
+cfCorner.Parent = controlFrame
+
+local controlLabel = Instance.new("TextLabel")
+controlLabel.Size = UDim2.new(1, -110, 1, 0)
+controlLabel.Position = UDim2.new(0, 12, 0, 0)
+controlLabel.BackgroundTransparency = 1
+controlLabel.Text = "🎮 Platform Control (WASD)"
+controlLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+controlLabel.TextSize = 13
+controlLabel.Font = Enum.Font.GothamBold
+controlLabel.TextXAlignment = Enum.TextXAlignment.Left
+controlLabel.Parent = controlFrame
+
+local controlToggle = Instance.new("TextButton")
+controlToggle.Name = "ControlToggle"
+controlToggle.Size = UDim2.new(0, 85, 0, 36)
+controlToggle.Position = UDim2.new(1, -97, 0.5, -18)
+controlToggle.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+controlToggle.Text = "OFF"
+controlToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+controlToggle.TextSize = 13
+controlToggle.Font = Enum.Font.GothamBold
+controlToggle.BorderSizePixel = 0
+controlToggle.Parent = controlFrame
+
+local ctCorner = Instance.new("UICorner")
+ctCorner.CornerRadius = UDim.new(0, 8)
+ctCorner.Parent = controlToggle
+
+-- Status label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Size = UDim2.new(1, -20, 0, 80)
+statusLabel.Position = UDim2.new(0, 10, 0, 116)
+statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+statusLabel.Text = "Ready to control platform!\n\n🎮 Click ON button to enable control"
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.TextSize = 12
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextWrapped = true
+statusLabel.TextYAlignment = Enum.TextYAlignment.Top
+statusLabel.BorderSizePixel = 0
+statusLabel.Parent = mainFrame
+
+local slCorner = Instance.new("UICorner")
+slCorner.CornerRadius = UDim.new(0, 8)
+slCorner.Parent = statusLabel
+
+local slPad = Instance.new("UIPadding")
+slPad.PaddingLeft = UDim.new(0, 10)
+slPad.PaddingRight = UDim.new(0, 10)
+slPad.PaddingTop = UDim.new(0, 8)
+slPad.PaddingBottom = UDim.new(0, 8)
+slPad.Parent = statusLabel
+
+-- Make draggable
+local dragging = false
+local dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+print("✅ GUI control panel created!")
+
+-- ============================================================================
+-- STEP 4: SETUP HUMANOID-BASED CONTROL SYSTEM
+-- ============================================================================
+print("\n[STEP 4/4] 🔥 Setting up Humanoid-based control system...")
+
+-- Create a Model with Humanoid for physics-based movement
+local rigModel = Instance.new("Model")
+rigModel.Name = "PlatformRig"
+rigModel.Parent = workspace
+
+-- Set client part as the HumanoidRootPart
+clientPart.Name = "HumanoidRootPart"
+clientPart.Parent = rigModel
+
+-- Create Humanoid
+local rigHumanoid = Instance.new("Humanoid")
+rigHumanoid.Name = "Humanoid"
+rigHumanoid.Parent = rigModel
+
+-- Set model's PrimaryPart
+rigModel.PrimaryPart = clientPart
+
+-- Configure Humanoid properties
+rigHumanoid.WalkSpeed = 16
+rigHumanoid.JumpPower = 50
+rigHumanoid.MaxHealth = 100
+rigHumanoid.Health = 100
+rigHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+
+print("  ✓ Model + Humanoid created")
+print("  ✓ Client part set as HumanoidRootPart")
+
+-- Control variables
+local controlEnabled = false
+local MOVE_SPEED = 16
+
+-- Player control disable/restore functions (REMOVED - let player move freely!)
+-- Character should NOT freeze when controlling platform
+
+-- Toggle control with GUI button
+controlToggle.MouseButton1Click:Connect(function()
+    controlEnabled = not controlEnabled
+    print(string.format("[TOGGLE] controlEnabled = %s", tostring(controlEnabled)))
+    
+    if controlEnabled then
+        controlToggle.Text = "ON"
+        controlToggle.BackgroundColor3 = Color3.fromRGB(50, 200, 100)
+        statusLabel.Text = "🎮 PLATFORM CONTROL ACTIVE!\n\nUse Roblox joystick/WASD to move | Jump button/Space to jump"
+        
+        print("\n✅ PLATFORM CONTROL ENABLED!")
+        print("  ✓ Camera locked to platform")
+        print("  ✓ Using built-in Roblox controls (joystick + jump button)")
+        print("  ✓ Humanoid-based movement active")
+        
+        -- Store original camera subject
+        originalCameraSubject = currentCamera.CameraSubject
+        
+        -- Set camera to follow platform
+        currentCamera.CameraSubject = rigHumanoid
+        
+        -- DON'T disable player controls - we need them for joystick input!
+        
+    else
+        controlToggle.Text = "OFF"
+        controlToggle.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+        statusLabel.Text = "Ready to control platform!\n\n🎮 Click ON button to enable control"
+        
+        print("\n❌ PLATFORM CONTROL DISABLED!")
+        print("  ✓ Camera restored to player")
+        
+        -- Restore original camera subject
+        if originalCameraSubject then
+            currentCamera.CameraSubject = originalCameraSubject
+        end
+        
+        -- Stop all movement
+        if rigHumanoid then
+            rigHumanoid:Move(Vector3.new(0, 0, 0))
+        end
+    end
+end)
+
+-- Detect device type
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local isPC = UserInputService.KeyboardEnabled
+
+print(string.format("  ✓ Device detected: %s", isMobile and "MOBILE" or "PC"))
+
+-- Movement input tracking
+local moveInput = {
+    W = false,
+    A = false,
+    S = false,
+    D = false
+}
+
+-- PC: Track WASD input
+if isPC then
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not controlEnabled then return end
+        
+        if input.KeyCode == Enum.KeyCode.W then
+            moveInput.W = true
+        elseif input.KeyCode == Enum.KeyCode.A then
+            moveInput.A = true
+        elseif input.KeyCode == Enum.KeyCode.S then
+            moveInput.S = true
+        elseif input.KeyCode == Enum.KeyCode.D then
+            moveInput.D = true
+        elseif input.KeyCode == Enum.KeyCode.Space then
+            if rigHumanoid then
+                rigHumanoid.Jump = true
+                print("🚀 JUMP!")
+            end
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if input.KeyCode == Enum.KeyCode.W then
+            moveInput.W = false
+        elseif input.KeyCode == Enum.KeyCode.A then
+            moveInput.A = false
+        elseif input.KeyCode == Enum.KeyCode.S then
+            moveInput.S = false
+        elseif input.KeyCode == Enum.KeyCode.D then
+            moveInput.D = false
+        end
+    end)
+end
+
+-- Mobile: Use player's MoveVector if available
+local useMoveVector = isMobile and playerHumanoid:FindFirstChild("MoveVector") ~= nil
+
+-- Humanoid-based movement loop
+RunService.Heartbeat:Connect(function(dt)
+    if not controlEnabled or not clientPart or not clientPart.Parent then return end
+    if not rigHumanoid then return end
+    
+    local moveDirection = Vector3.new(0, 0, 0)
+    
+    if isMobile and useMoveVector then
+        -- MOBILE: Read from player's MoveVector (joystick)
+        local moveVector = playerHumanoid.MoveVector
+        
+        if moveVector.Magnitude > 0 then
+            -- Get camera direction
+            local cameraCF = currentCamera.CFrame
+            local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
+            local cameraRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
+            
+            -- Convert move vector to world space relative to camera
+            moveDirection = (cameraLook * moveVector.Z + cameraRight * moveVector.X)
+        end
+        
+        -- Copy jump state from player
+        if playerHumanoid.Jump then
+            rigHumanoid.Jump = true
+        end
+        
+    else
+        -- PC: Read from WASD keys
+        local cameraCF = currentCamera.CFrame
+        local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
+        local cameraRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
+        
+        if moveInput.W then
+            moveDirection = moveDirection + cameraLook
+        end
+        if moveInput.S then
+            moveDirection = moveDirection - cameraLook
+        end
+        if moveInput.A then
+            moveDirection = moveDirection - cameraRight
+        end
+        if moveInput.D then
+            moveDirection = moveDirection + cameraRight
+        end
+    end
+    
+    -- Apply movement
+    if moveDirection.Magnitude > 0 then
+        moveDirection = moveDirection.Unit
+        rigHumanoid:Move(moveDirection, false)
+    else
+        rigHumanoid:Move(Vector3.new(0, 0, 0), false)
+    end
+    
+    -- Update humanoid WalkSpeed
+    rigHumanoid.WalkSpeed = MOVE_SPEED
+end)
+
+print("✅ Humanoid-based control system ready!")
+
+-- ============================================================================
+-- LASER EYES TOOL SYSTEM (DESTRUCTIVE - PERSISTENT LASERS)
+-- ============================================================================
+print("\n[BONUS] 🔴 Creating Laser Eyes Tool...")
+
+-- Eye positions relative to platform center
+local function getEyePositions()
+    if not clientPart or not clientPart.Parent then return nil, nil end
+    
+    local cf = clientPart.CFrame
+    
+    -- Left eye offset: -0.8 studs X, +2.45 studs Y, 0 studs Z
+    -- Right eye offset: +1.3 studs X, +2.45 studs Y, 0 studs Z
+    local leftEyeOffset = Vector3.new(-0.8, 2.45, 0)
+    local rightEyeOffset = Vector3.new(1.3, 2.45, 0)
+    
+    local leftEyePos = cf * CFrame.new(leftEyeOffset)
+    local rightEyePos = cf * CFrame.new(rightEyeOffset)
+    
+    return leftEyePos.Position, rightEyePos.Position
+end
+
+-- Destroy parts along laser path (OPTIMIZED - limit checks)
+local function destroyPartsAlongLaser(startPos, endPos, radius)
+    local direction = (endPos - startPos).Unit
+    local distance = (endPos - startPos).Magnitude
+    
+    local mainMap = workspace:FindFirstChild("Terrain")
+    if mainMap then
+        mainMap = mainMap:FindFirstChild("Everything")
+        if mainMap then
+            mainMap = mainMap:FindFirstChild("MainMap")
+        end
+    end
+    
+    local partsToDestroy = {}
+    local maxParts = 10 -- Limit parts destroyed per update to reduce lag
+    
+    -- Use Region3 for faster spatial queries instead of GetDescendants
+    local region = Region3.new(startPos, endPos):ExpandToGrid(4)
+    local partsInRegion = workspace:FindPartsInRegion3(region, nil, 100) -- Limit to 100 parts checked
+    
+    for _, obj in ipairs(partsInRegion) do
+        if #partsToDestroy >= maxParts then break end -- Stop if we hit the limit
+        
+        if obj:IsA("BasePart") and obj.Name ~= "LaserBeam_Left" and obj.Name ~= "LaserBeam_Right" and obj.Name ~= "Platform_Client" and obj.Name ~= "Platform_Server" then
+            -- Allow destroying "Grass" parts
+            local shouldDestroy = obj.Name == "Grass"
+            
+            if not shouldDestroy then
+                local isCharacterPart = false
+                local isMainMapPart = false
+                local isPlatformPart = obj == clientPart or obj == serverPart
+                local isFakeCharacterPart = false
+                local isPlayerTouching = false
+                
+                -- Check if part is from fake character (rigModel)
+                if rigModel and obj:IsDescendantOf(rigModel) then
+                    isFakeCharacterPart = true
+                end
+                
+                -- Check if part is from player character
+                if player.Character and obj:IsDescendantOf(player.Character) then
+                    isCharacterPart = true
+                end
+                
+                -- Check if part is from MainMap
+                if mainMap and obj:IsDescendantOf(mainMap) then
+                    isMainMapPart = true
+                end
+                
+                -- Check if player is touching this part (don't destroy what we're standing on)
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    local touchingParts = player.Character.HumanoidRootPart:GetTouchingParts()
+                    for _, touchingPart in ipairs(touchingParts) do
+                        if touchingPart == obj then
+                            isPlayerTouching = true
+                            break
+                        end
+                    end
+                end
+                
+                shouldDestroy = not isCharacterPart and not isMainMapPart and not isPlatformPart and not isFakeCharacterPart and not isPlayerTouching
+            end
+            
+            if shouldDestroy then
+                local partPos = obj.Position
+                local closestPoint = startPos + direction * math.clamp((partPos - startPos):Dot(direction), 0, distance)
+                local distanceToLine = (partPos - closestPoint).Magnitude
+                
+                if distanceToLine <= radius then
+                    table.insert(partsToDestroy, obj)
+                end
+            end
+        end
+    end
+    
+    if #partsToDestroy > 0 then
+        task.spawn(function()
+            local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+            local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+            
+            pcall(function()
+                EscalateEvent:FireServer(PartOwnership, partsToDestroy)
+            end)
+            
+            task.wait(0.15)
+            
+            for _, part in ipairs(partsToDestroy) do
+                if part and part.Parent then
+                    task.spawn(function()
+                        pcall(function()
+                            ep:InvokeServer("CreateGroup", "Model", workspace, {part})
+                            task.wait(0.01)
+                            ep:InvokeServer("Ungroup", {part})
+                            task.wait(0.01)
+                            
+                            if part and part.Parent then
+                                ep:InvokeServer("Remove", {part})
+                            end
+                        end)
+                    end)
+                    
+                    task.wait(0.0001)
+                end
+            end
+        end)
+    end
+end
+
+-- Create single laser part (STEALTH: 0.001x size with 1000x mesh)
+local function createLaserPart(name)
+    local laserPart = ep:InvokeServer("CreatePart", "Normal", CFrame.new(0, -1000, 0), workspace)
+    if not laserPart then return nil end
+    
+    laserPart.Name = name
+    
+    local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+    local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+    EscalateEvent:FireServer(PartOwnership, {laserPart})
+    
+    repeat task.wait(0.01) until laserPart:FindFirstChild("RRPartOwner")
+    
+    -- Set initial size to 0.001x (stealth)
+    local stealthSize = Vector3.new(0.3, 0.3, 0.3) * 0.001
+    ep:InvokeServer("SyncResize", {{Part = laserPart, Size = stealthSize, CFrame = CFrame.new(0, -1000, 0)}})
+    
+    -- Set material properties
+    SyncAPI:Invoke("SyncMaterial", {{Part = laserPart, Transparency = 0.2, Material = Enum.Material.Neon}})
+    SyncAPI:Invoke("SyncColor", {{Part = laserPart, UnionColoring = true, Color = Color3.fromRGB(255, 0, 0)}})
+    SyncAPI:Invoke("SyncAnchor", {{Part = laserPart, Anchored = true}})
+    
+    -- Add mesh with 1000x scale
+    local mesh = Instance.new("BlockMesh")
+    mesh.Scale = Vector3.new(1000, 1000, 1000)
+    mesh.Parent = laserPart
+    
+    return laserPart
+end
+
+-- Laser parts (created once)
+local leftLaser = nil
+local rightLaser = nil
+local laserActive = false
+
+-- Fly system variables (GLOBAL - shared between tools)
+local flyEnabled = false
+local bodyPos = nil
+local bodyGyro = nil
+local flyConnection = nil
+
+-- Toggle fly function (controls FAKE character, not real player)
+local function toggleFly()
+    flyEnabled = not flyEnabled
+    
+    if flyEnabled then
+        -- Enable fly on FAKE character (rigModel)
+        if not rigModel or not clientPart or not rigHumanoid then
+            flyEnabled = false
+            print("⚠️ Enable platform control first!")
+            return
+        end
+        
+        -- Create BodyPosition and BodyGyro on FAKE character
+        bodyPos = Instance.new("BodyPosition")
+        bodyGyro = Instance.new("BodyGyro")
+        
+        bodyPos.Position = clientPart.Position
+        bodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyPos.P = 100000
+        bodyPos.D = 1750
+        bodyPos.Parent = clientPart
+        
+        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bodyGyro.P = 100000
+        bodyGyro.D = 2200
+        bodyGyro.Parent = clientPart
+        
+        rigHumanoid.PlatformStand = true
+        
+        -- Fly update loop
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if not flyEnabled or not bodyPos or not bodyGyro then return end
+            
+            local cam = workspace.CurrentCamera
+            local cf = cam.CFrame.Rotation
+            local dir = cf:VectorToObjectSpace(rigHumanoid.MoveDirection * 1) -- speed = 1
+            local direction
+            
+            if dir.Magnitude == 0 then
+                direction = Vector3.new(0, 0, 0)
+            else
+                direction = cf:VectorToWorldSpace(Vector3.new(dir.X, 0, dir.Z).Unit * dir.Magnitude)
+            end
+            
+            bodyPos.Position = bodyPos.Position + direction
+            bodyGyro.CFrame = cam.CFrame
+            
+            -- Disable collisions on fake character
+            for _, part in ipairs(rigModel:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+            
+            rigHumanoid.PlatformStand = true
+        end)
+        
+        print("✈️ Fly enabled on platform!")
+    else
+        -- Disable fly
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+        
+        if bodyPos then
+            bodyPos:Destroy()
+            bodyPos = nil
+        end
+        
+        if bodyGyro then
+            bodyGyro:Destroy()
+            bodyGyro = nil
+        end
+        
+        if rigHumanoid then
+            rigHumanoid.PlatformStand = false
+        end
+        
+        print("✈️ Fly disabled!")
+    end
+end
+
+-- Create Fly Tool (separate from laser tool)
+local flyTool = Instance.new("Tool")
+flyTool.Name = "✈️ Fly"
+flyTool.RequiresHandle = false
+flyTool.CanBeDropped = false
+
+flyTool.Equipped:Connect(function()
+    -- Toggle fly and immediately unequip
+    toggleFly()
+    task.wait(0.1)
+    flyTool.Parent = player.Backpack
+end)
+
+-- Q key toggle for PC
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        toggleFly()
+    end
+end)
+
+-- Create Laser Eyes Tool
+local laserTool = Instance.new("Tool")
+laserTool.Name = "👁️ Laser Eyes"
+laserTool.RequiresHandle = false
+laserTool.CanBeDropped = false
+
+-- Tool equipped
+laserTool.Equipped:Connect(function()
+    if not controlEnabled then
+        print("⚠️ Enable platform control first!")
+        return
+    end
+    
+    laserActive = true
+    print("🔴 Laser Eyes activated!")
+    
+    -- Create laser parts if they don't exist
+    if not leftLaser or not leftLaser.Parent then
+        leftLaser = createLaserPart("LaserBeam_Left")
+    end
+    if not rightLaser or not rightLaser.Parent then
+        rightLaser = createLaserPart("LaserBeam_Right")
+    end
+end)
+
+-- Tool unequipped
+laserTool.Unequipped:Connect(function()
+    laserActive = false
+    
+    -- Pool lasers at 0, 2000, 0 instead of destroying
+    if leftLaser and leftLaser.Parent then
+        pcall(function()
+            local poolSize = Vector3.new(0.3, 0.3, 0.3) * 0.001
+            ep:InvokeServer("SyncResize", {
+                {Part = leftLaser, Size = poolSize, CFrame = CFrame.new(0, 2000, 0)}
+            })
+        end)
+    end
+    
+    if rightLaser and rightLaser.Parent then
+        pcall(function()
+            local poolSize = Vector3.new(0.3, 0.3, 0.3) * 0.001
+            ep:InvokeServer("SyncResize", {
+                {Part = rightLaser, Size = poolSize, CFrame = CFrame.new(0, 2000, 0)}
+            })
+        end)
+    end
+    
+    print("🔴 Laser Eyes deactivated! (Pooled)")
+end)
+
+-- Continuous laser update loop (batch move + resize)
+local lastLaserUpdate = 0
+local lastDestructionUpdate = 0
+local LASER_UPDATE_RATE = 1/30 -- 30Hz updates (reduced from 60Hz for performance)
+local DESTRUCTION_UPDATE_RATE = 1/10 -- 10Hz destruction checks (much slower)
+
+RunService.Heartbeat:Connect(function()
+    if not laserActive or not controlEnabled then return end
+    if not leftLaser or not rightLaser or not leftLaser.Parent or not rightLaser.Parent then return end
+    
+    local currentTime = tick()
+    if currentTime - lastLaserUpdate < LASER_UPDATE_RATE then return end
+    lastLaserUpdate = currentTime
+    
+    local mouse = player:GetMouse()
+    if not mouse.Target then return end
+    
+    local leftEye, rightEye = getEyePositions()
+    if not leftEye or not rightEye then return end
+    
+    local targetPos = mouse.Hit.Position
+    
+    -- Raycast from each eye
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {clientPart, serverPart, rigModel, player.Character, leftLaser, rightLaser}
+    
+    -- Add all fake character parts to filter
+    if rigModel then
+        for _, part in ipairs(rigModel:GetDescendants()) do
+            if part:IsA("BasePart") then
+                table.insert(raycastParams.FilterDescendantsInstances, part)
+            end
+        end
+    end
+    
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    -- Left eye raycast
+    local leftDirection = (targetPos - leftEye).Unit
+    local leftResult = workspace:Raycast(leftEye, leftDirection * 500, raycastParams)
+    local leftHitPos = leftResult and leftResult.Position or (leftEye + leftDirection * 500)
+    
+    -- Right eye raycast
+    local rightDirection = (targetPos - rightEye).Unit
+    local rightResult = workspace:Raycast(rightEye, rightDirection * 500, raycastParams)
+    local rightHitPos = rightResult and rightResult.Position or (rightEye + rightDirection * 500)
+    
+    -- Calculate laser CFrames and sizes
+    local leftLength = (leftHitPos - leftEye).Magnitude
+    local leftCF = CFrame.new(leftEye, leftHitPos) * CFrame.new(0, 0, -leftLength / 2)
+    
+    local rightLength = (rightHitPos - rightEye).Magnitude
+    local rightCF = CFrame.new(rightEye, rightHitPos) * CFrame.new(0, 0, -rightLength / 2)
+    
+    -- Calculate stealth sizes (0.001x base with length)
+    local leftStealthSize = Vector3.new(0.3, 0.3, leftLength) * 0.001
+    local rightStealthSize = Vector3.new(0.3, 0.3, rightLength) * 0.001
+    
+    -- BATCH update both lasers (move + resize at same time)
+    pcall(function()
+        ep:InvokeServer("SyncResize", {
+            {Part = leftLaser, Size = leftStealthSize, CFrame = leftCF},
+            {Part = rightLaser, Size = rightStealthSize, CFrame = rightCF}
+        })
+    end)
+    
+    -- Destroy parts along laser paths (MUCH SLOWER UPDATE RATE)
+    if currentTime - lastDestructionUpdate >= DESTRUCTION_UPDATE_RATE then
+        lastDestructionUpdate = currentTime
+        destroyPartsAlongLaser(leftEye, leftHitPos, 3)
+        destroyPartsAlongLaser(rightEye, rightHitPos, 3)
+    end
+end)
+
+-- Add tools to player's backpack
+laserTool.Parent = player.Backpack
+flyTool.Parent = player.Backpack
+
+print("✅ Laser Eyes Tool added to backpack!")
+print("  ✓ Left eye: -0.8, +2.45, 0 | Right eye: +1.3, +2.45, 0")
+print("  ✓ Equip tool to activate persistent lasers!")
+print("  ✓ Lasers destroy parts in their path!")
+print("✅ Fly Tool added to backpack!")
+print("  ✓ PC: Press Q to toggle fly")
+print("  ✓ Mobile: Equip tool to toggle fly")
+
+print("\n╔════════════════════════════════════════════════════╗")
+print("║  ✅ DUAL-PART PLATFORM READY! 🌪️                  ║")
+print("╚════════════════════════════════════════════════════╝")
+print("\n📋 CONTROLS:")
+print("  GUI Button - Toggle control on/off")
+print("  WASD - Move (camera-relative)")
+print("  Space - Jump")
+print("  Laser Eyes Tool - Equip to activate!")
+print("  Q Key - Toggle fly (PC)")
+print("  ✈️ Fly Tool - Equip to toggle (Mobile)")
+print("\n✅ Platform size: 9.5 x 9.5 x 0.1 (0.1 THICKNESS!)")
+print("✅ Platform is ready to use!")
+print("✅ Control works EXACTLY like ULTRA_TURBO version!")
+print("✅ Humanoid-based physics movement!")
+print("✅ Camera follows platform when enabled!")
+print("✅ GUI control panel with ON/OFF button!")
+print("✅ Laser Eyes Tool ready! 🔴👁️")
+print("✅ STEALTH LASERS: 0.001x size with 1000x mesh!")
+print("✅ Smart destruction: Won't destroy parts you're standing on!")
+print("✅ Laser ignores fake character in raycasts!")
+print("✅ Fly Tool: Q key (PC) or Equip (Mobile)!")
+print("✅ Character can move freely while controlling platform!")
+print("✅ FIXED mesh scale: 1000, 1000, 10!")
+print("✅ Decal on front face: rbxassetid://117560694472690!")
+print("✅ NO DELAYS - optimized for speed!")
