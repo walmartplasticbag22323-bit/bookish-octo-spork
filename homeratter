@@ -500,7 +500,7 @@ local isPC = UserInputService.KeyboardEnabled
 
 print(string.format("  ✓ Device detected: %s", isMobile and "MOBILE" or "PC"))
 
--- Movement input tracking
+-- Movement input tracking (PC only)
 local moveInput = {
     W = false,
     A = false,
@@ -542,57 +542,35 @@ if isPC then
     end)
 end
 
--- Mobile: Capture joystick input directly from player's Humanoid
+-- Mobile: Will use player's Humanoid.MoveDirection directly
 if isMobile then
-    print("📱 Mobile detected - will read from player's Humanoid.MoveVector")
+    print("📱 Mobile detected - will use Humanoid.MoveDirection")
 end
 
--- Get mobile input from player's Humanoid.MoveVector
-local lastMobilePrint = 0
-local function getMobileInput()
-    -- Read directly from player's humanoid MoveVector (works with joystick!)
-    local success, moveVector = pcall(function()
-        return playerHumanoid.MoveVector
-    end)
-    
-    if success and moveVector and moveVector.Magnitude > 0 then
-        -- Debug print (throttled to every 2 seconds)
-        if tick() - lastMobilePrint > 2 then
-            print(string.format("📱 Joystick Input: X=%.2f Y=%.2f Z=%.2f | Magnitude=%.2f", 
-                moveVector.X, moveVector.Y, moveVector.Z, moveVector.Magnitude))
-            lastMobilePrint = tick()
-        end
-        return moveVector
-    end
-    
-    -- Debug when no input (throttled to every 5 seconds)
-    if tick() - lastMobilePrint > 5 then
-        print("📱 No joystick input detected")
-        lastMobilePrint = tick()
-    end
-    
-    return nil
-end
-
--- Humanoid-based movement loop
+-- Humanoid-based movement loop (SIMPLIFIED - works for both PC and Mobile!)
 RunService.Heartbeat:Connect(function(dt)
     if not controlEnabled or not clientPart or not clientPart.Parent then return end
     if not rigHumanoid then return end
     
     local moveDirection = Vector3.new(0, 0, 0)
     
+    -- Get camera vectors
+    local cameraCF = currentCamera.CFrame
+    local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
+    local cameraRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
+    
     if isMobile then
-        -- MOBILE: Read from player's MoveVector (joystick)
-        local moveVector = getMobileInput()
+        -- MOBILE: Use player's Humanoid.MoveDirection (automatically set by joystick!)
+        local playerMoveDir = playerHumanoid.MoveDirection
         
-        if moveVector then
-            -- Get camera direction
-            local cameraCF = currentCamera.CFrame
-            local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
-            local cameraRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
+        if playerMoveDir.Magnitude > 0 then
+            -- Player's MoveDirection is already camera-relative and normalized!
+            moveDirection = playerMoveDir
             
-            -- Convert move vector to world space relative to camera
-            moveDirection = (cameraLook * moveVector.Z + cameraRight * moveVector.X)
+            -- Debug (throttled)
+            if tick() % 2 < dt then
+                print(string.format("📱 Moving: X=%.2f Z=%.2f", playerMoveDir.X, playerMoveDir.Z))
+            end
         end
         
         -- Copy jump state from player
@@ -601,11 +579,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
         
     else
-        -- PC: Read from WASD keys
-        local cameraCF = currentCamera.CFrame
-        local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
-        local cameraRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
-        
+        -- PC: Build direction from WASD keys
         if moveInput.W then
             moveDirection = moveDirection + cameraLook
         end
@@ -620,7 +594,7 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
     
-    -- Apply movement
+    -- Apply movement to fake character
     if moveDirection.Magnitude > 0 then
         moveDirection = moveDirection.Unit
         rigHumanoid:Move(moveDirection, false)
@@ -862,35 +836,22 @@ local function toggleFly()
         
         rigHumanoid.PlatformStand = true
         
-        -- Fly update loop
+        -- Fly update loop (works for both PC and Mobile!)
         flyConnection = RunService.Heartbeat:Connect(function()
             if not flyEnabled or not bodyPos or not bodyGyro then return end
             
             local cam = workspace.CurrentCamera
             local cf = cam.CFrame.Rotation
             
-            -- Get movement direction (works for both PC and mobile)
-            local moveDir = Vector3.new(0, 0, 0)
-            
-            if isMobile then
-                -- Mobile: Read from player's humanoid MoveVector
-                local success, moveVector = pcall(function()
-                    return playerHumanoid.MoveVector
-                end)
-                
-                if success and moveVector and moveVector.Magnitude > 0 then
-                    moveDir = moveVector
-                end
-            else
-                -- PC: Read from rigHumanoid MoveDirection
-                moveDir = rigHumanoid.MoveDirection
-            end
+            -- Get movement direction from PLAYER's humanoid (works for both PC and mobile!)
+            -- The player's Humanoid.MoveDirection is automatically set by Roblox based on input
+            local moveDir = playerHumanoid.MoveDirection
             
             local direction
             if moveDir.Magnitude == 0 then
                 direction = Vector3.new(0, 0, 0)
             else
-                -- Convert to camera-relative direction
+                -- MoveDirection is already camera-relative, just need to convert to world space
                 local dir = cf:VectorToObjectSpace(moveDir)
                 direction = cf:VectorToWorldSpace(Vector3.new(dir.X, 0, dir.Z).Unit * moveDir.Magnitude)
             end
