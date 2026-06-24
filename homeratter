@@ -508,9 +508,6 @@ local moveInput = {
     D = false
 }
 
--- Mobile joystick input (from ContextActionService)
-local mobileJoystickVector = Vector3.new(0, 0, 0)
-
 -- PC: Track WASD input
 if isPC then
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -545,73 +542,33 @@ if isPC then
     end)
 end
 
--- Mobile: Capture joystick input via ContextActionService
+-- Mobile: Capture joystick input directly from player's Humanoid
 if isMobile then
-    local function handleMovement(actionName, inputState, inputObject)
-        if not controlEnabled then return end
-        
-        -- Check if it's a valid movement input
-        if inputObject.UserInputType == Enum.UserInputType.Gamepad1 or 
-           inputObject.UserInputType == Enum.UserInputType.Touch or
-           inputObject.Delta.Magnitude > 0 then
-            
-            -- Position contains the joystick vector
-            local pos = inputObject.Position
-            
-            -- X = left/right (-1 to 1)
-            -- Y = forward/backward (-1 to 1) 
-            -- Z is usually 0
-            mobileJoystickVector = Vector3.new(pos.X, 0, -pos.Y)
-            
-            -- Also try Delta if Position is zero
-            if mobileJoystickVector.Magnitude == 0 then
-                local delta = inputObject.Delta
-                mobileJoystickVector = Vector3.new(delta.X, 0, -delta.Y)
-            end
-        end
-        
-        return Enum.ContextActionResult.Pass -- Let other systems use it too
-    end
-    
-    -- Bind to all movement actions
-    ContextActionService:BindAction(
-        "GetJoystick", 
-        handleMovement, 
-        false, 
-        Enum.PlayerActions.CharacterForward, 
-        Enum.PlayerActions.CharacterBackward, 
-        Enum.PlayerActions.CharacterLeft, 
-        Enum.PlayerActions.CharacterRight
-    )
-    
-    print("📱 Mobile joystick bound to ContextActionService")
+    print("📱 Mobile detected - will read from player's Humanoid.MoveVector")
 end
 
--- Mobile: Use player's MoveVector if available
+-- Get mobile input from player's Humanoid.MoveVector
 local lastMobilePrint = 0
 local function getMobileInput()
-    -- First try ContextActionService joystick
-    if mobileJoystickVector.Magnitude > 0 then
-        -- Debug print (throttled)
-        if tick() - lastMobilePrint > 1 then
-            print(string.format("📱 Joystick: X=%.2f Z=%.2f", mobileJoystickVector.X, mobileJoystickVector.Z))
-            lastMobilePrint = tick()
-        end
-        return mobileJoystickVector
-    end
-    
-    -- Fallback: Try to get MoveVector from player's humanoid
+    -- Read directly from player's humanoid MoveVector (works with joystick!)
     local success, moveVector = pcall(function()
         return playerHumanoid.MoveVector
     end)
     
     if success and moveVector and moveVector.Magnitude > 0 then
-        -- Debug print (throttled)
-        if tick() - lastMobilePrint > 1 then
-            print(string.format("📱 Humanoid MoveVector: X=%.2f Z=%.2f", moveVector.X, moveVector.Z))
+        -- Debug print (throttled to every 2 seconds)
+        if tick() - lastMobilePrint > 2 then
+            print(string.format("📱 Joystick Input: X=%.2f Y=%.2f Z=%.2f | Magnitude=%.2f", 
+                moveVector.X, moveVector.Y, moveVector.Z, moveVector.Magnitude))
             lastMobilePrint = tick()
         end
         return moveVector
+    end
+    
+    -- Debug when no input (throttled to every 5 seconds)
+    if tick() - lastMobilePrint > 5 then
+        print("📱 No joystick input detected")
+        lastMobilePrint = tick()
     end
     
     return nil
@@ -911,13 +868,31 @@ local function toggleFly()
             
             local cam = workspace.CurrentCamera
             local cf = cam.CFrame.Rotation
-            local dir = cf:VectorToObjectSpace(rigHumanoid.MoveDirection * 1) -- speed = 1
-            local direction
             
-            if dir.Magnitude == 0 then
+            -- Get movement direction (works for both PC and mobile)
+            local moveDir = Vector3.new(0, 0, 0)
+            
+            if isMobile then
+                -- Mobile: Read from player's humanoid MoveVector
+                local success, moveVector = pcall(function()
+                    return playerHumanoid.MoveVector
+                end)
+                
+                if success and moveVector and moveVector.Magnitude > 0 then
+                    moveDir = moveVector
+                end
+            else
+                -- PC: Read from rigHumanoid MoveDirection
+                moveDir = rigHumanoid.MoveDirection
+            end
+            
+            local direction
+            if moveDir.Magnitude == 0 then
                 direction = Vector3.new(0, 0, 0)
             else
-                direction = cf:VectorToWorldSpace(Vector3.new(dir.X, 0, dir.Z).Unit * dir.Magnitude)
+                -- Convert to camera-relative direction
+                local dir = cf:VectorToObjectSpace(moveDir)
+                direction = cf:VectorToWorldSpace(Vector3.new(dir.X, 0, dir.Z).Unit * moveDir.Magnitude)
             end
             
             bodyPos.Position = bodyPos.Position + direction
