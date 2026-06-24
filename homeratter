@@ -13,8 +13,8 @@
     - Stealth lasers: 0.001x size with 1000x mesh scale
     - Persistent server parts (pooled at 0, 2000, 0 when unequipped)
     - 30Hz visual updates, 10Hz destruction checks (optimized for performance)
-    - Region3 spatial queries instead of GetDescendants (MUCH faster)
-    - Max 10 parts destroyed per update to prevent lag
+    - GetPartBoundsInBox spatial queries (MUCH faster than GetDescendants)
+    - Max 15 parts destroyed per update to prevent lag
     - Destroys parts along laser path (excludes MainMap, characters, fake character)
     - Smart destruction: Won't destroy parts player is touching (except "Grass")
     - Laser ignores fake character (rigModel) in raycasts
@@ -38,6 +38,7 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -507,6 +508,9 @@ local moveInput = {
     D = false
 }
 
+-- Mobile joystick input (from ContextActionService)
+local mobileJoystickVector = Vector3.new(0, 0, 0)
+
 -- PC: Track WASD input
 if isPC then
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -541,8 +545,77 @@ if isPC then
     end)
 end
 
+-- Mobile: Capture joystick input via ContextActionService
+if isMobile then
+    local function handleMovement(actionName, inputState, inputObject)
+        if not controlEnabled then return end
+        
+        -- Check if it's a valid movement input
+        if inputObject.UserInputType == Enum.UserInputType.Gamepad1 or 
+           inputObject.UserInputType == Enum.UserInputType.Touch or
+           inputObject.Delta.Magnitude > 0 then
+            
+            -- Position contains the joystick vector
+            local pos = inputObject.Position
+            
+            -- X = left/right (-1 to 1)
+            -- Y = forward/backward (-1 to 1) 
+            -- Z is usually 0
+            mobileJoystickVector = Vector3.new(pos.X, 0, -pos.Y)
+            
+            -- Also try Delta if Position is zero
+            if mobileJoystickVector.Magnitude == 0 then
+                local delta = inputObject.Delta
+                mobileJoystickVector = Vector3.new(delta.X, 0, -delta.Y)
+            end
+        end
+        
+        return Enum.ContextActionResult.Pass -- Let other systems use it too
+    end
+    
+    -- Bind to all movement actions
+    ContextActionService:BindAction(
+        "GetJoystick", 
+        handleMovement, 
+        false, 
+        Enum.PlayerActions.CharacterForward, 
+        Enum.PlayerActions.CharacterBackward, 
+        Enum.PlayerActions.CharacterLeft, 
+        Enum.PlayerActions.CharacterRight
+    )
+    
+    print("📱 Mobile joystick bound to ContextActionService")
+end
+
 -- Mobile: Use player's MoveVector if available
-local useMoveVector = isMobile and playerHumanoid:FindFirstChild("MoveVector") ~= nil
+local lastMobilePrint = 0
+local function getMobileInput()
+    -- First try ContextActionService joystick
+    if mobileJoystickVector.Magnitude > 0 then
+        -- Debug print (throttled)
+        if tick() - lastMobilePrint > 1 then
+            print(string.format("📱 Joystick: X=%.2f Z=%.2f", mobileJoystickVector.X, mobileJoystickVector.Z))
+            lastMobilePrint = tick()
+        end
+        return mobileJoystickVector
+    end
+    
+    -- Fallback: Try to get MoveVector from player's humanoid
+    local success, moveVector = pcall(function()
+        return playerHumanoid.MoveVector
+    end)
+    
+    if success and moveVector and moveVector.Magnitude > 0 then
+        -- Debug print (throttled)
+        if tick() - lastMobilePrint > 1 then
+            print(string.format("📱 Humanoid MoveVector: X=%.2f Z=%.2f", moveVector.X, moveVector.Z))
+            lastMobilePrint = tick()
+        end
+        return moveVector
+    end
+    
+    return nil
+end
 
 -- Humanoid-based movement loop
 RunService.Heartbeat:Connect(function(dt)
@@ -551,11 +624,11 @@ RunService.Heartbeat:Connect(function(dt)
     
     local moveDirection = Vector3.new(0, 0, 0)
     
-    if isMobile and useMoveVector then
+    if isMobile then
         -- MOBILE: Read from player's MoveVector (joystick)
-        local moveVector = playerHumanoid.MoveVector
+        local moveVector = getMobileInput()
         
-        if moveVector.Magnitude > 0 then
+        if moveVector then
             -- Get camera direction
             local cameraCF = currentCamera.CFrame
             local cameraLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
@@ -603,6 +676,11 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 print("✅ Humanoid-based control system ready!")
+if isMobile then
+    print("📱 Mobile detected - using joystick controls")
+else
+    print("💻 PC detected - using WASD controls")
+end
 
 -- ============================================================================
 -- LASER EYES TOOL SYSTEM (DESTRUCTIVE - PERSISTENT LASERS)
@@ -626,7 +704,7 @@ local function getEyePositions()
     return leftEyePos.Position, rightEyePos.Position
 end
 
--- Destroy parts along laser path (OPTIMIZED - limit checks)
+-- Destroy parts along laser path (OPTIMIZED - spatial query with limits)
 local function destroyPartsAlongLaser(startPos, endPos, radius)
     local direction = (endPos - startPos).Unit
     local distance = (endPos - startPos).Magnitude
@@ -640,13 +718,21 @@ local function destroyPartsAlongLaser(startPos, endPos, radius)
     end
     
     local partsToDestroy = {}
-    local maxParts = 10 -- Limit parts destroyed per update to reduce lag
+    local maxParts = 15 -- Limit parts destroyed per update to reduce lag
     
-    -- Use Region3 for faster spatial queries instead of GetDescendants
-    local region = Region3.new(startPos, endPos):ExpandToGrid(4)
-    local partsInRegion = workspace:FindPartsInRegion3(region, nil, 100) -- Limit to 100 parts checked
+    -- Use GetPartBoundsInBox for faster spatial queries
+    local midpoint = (startPos + endPos) / 2
+    local size = Vector3.new(radius * 2, radius * 2, distance)
+    local cframe = CFrame.lookAt(startPos, endPos) * CFrame.new(0, 0, -distance / 2)
     
-    for _, obj in ipairs(partsInRegion) do
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterDescendantsInstances = {clientPart, serverPart, rigModel, player.Character, leftLaser, rightLaser}
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.MaxParts = 100
+    
+    local partsInBox = workspace:GetPartBoundsInBox(cframe, size, overlapParams)
+    
+    for _, obj in ipairs(partsInBox) do
         if #partsToDestroy >= maxParts then break end -- Stop if we hit the limit
         
         if obj:IsA("BasePart") and obj.Name ~= "LaserBeam_Left" and obj.Name ~= "LaserBeam_Right" and obj.Name ~= "Platform_Client" and obj.Name ~= "Platform_Server" then
@@ -734,13 +820,20 @@ local function destroyPartsAlongLaser(startPos, endPos, radius)
     end
 end
 
--- Create single laser part (STEALTH: 0.001x size with 1000x mesh)
+-- Create single laser part (STEALTH: 0.001x size with 1000x mesh - SERVER-SIDE REPLICATION)
 local function createLaserPart(name)
+    print(string.format("🔴 Creating laser part: %s", name))
+    
+    -- Create part server-side
     local laserPart = ep:InvokeServer("CreatePart", "Normal", CFrame.new(0, -1000, 0), workspace)
-    if not laserPart then return nil end
+    if not laserPart then 
+        print("❌ Failed to create laser part!")
+        return nil 
+    end
     
     laserPart.Name = name
     
+    -- Claim ownership
     local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
     local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
     EscalateEvent:FireServer(PartOwnership, {laserPart})
@@ -751,15 +844,23 @@ local function createLaserPart(name)
     local stealthSize = Vector3.new(0.3, 0.3, 0.3) * 0.001
     ep:InvokeServer("SyncResize", {{Part = laserPart, Size = stealthSize, CFrame = CFrame.new(0, -1000, 0)}})
     
-    -- Set material properties
+    -- Set material properties (visible to all players)
     SyncAPI:Invoke("SyncMaterial", {{Part = laserPart, Transparency = 0.2, Material = Enum.Material.Neon}})
     SyncAPI:Invoke("SyncColor", {{Part = laserPart, UnionColoring = true, Color = Color3.fromRGB(255, 0, 0)}})
     SyncAPI:Invoke("SyncAnchor", {{Part = laserPart, Anchored = true}})
     
-    -- Add mesh with 1000x scale
-    local mesh = Instance.new("BlockMesh")
-    mesh.Scale = Vector3.new(1000, 1000, 1000)
-    mesh.Parent = laserPart
+    -- Create mesh SERVER-SIDE (this is the key for replication!)
+    SyncAPI:Invoke("CreateMeshes", {{Part = laserPart}})
+    task.wait(0.05) -- Wait for mesh to be created
+    
+    -- Set mesh scale to 1000x SERVER-SIDE (now it replicates!)
+    ep:InvokeServer("SyncMesh", {{
+        Part = laserPart,
+        Scale = Vector3.new(1000, 1000, 1000),
+        MeshType = Enum.MeshType.Brick
+    }})
+    
+    print(string.format("✅ Laser part created: %s (Server-side mesh, visible to ALL players!)", name))
     
     return laserPart
 end
@@ -933,6 +1034,7 @@ end)
 -- Continuous laser update loop (batch move + resize)
 local lastLaserUpdate = 0
 local lastDestructionUpdate = 0
+local lastLaserDebugPrint = 0
 local LASER_UPDATE_RATE = 1/30 -- 30Hz updates (reduced from 60Hz for performance)
 local DESTRUCTION_UPDATE_RATE = 1/10 -- 10Hz destruction checks (much slower)
 
@@ -989,12 +1091,19 @@ RunService.Heartbeat:Connect(function()
     local rightStealthSize = Vector3.new(0.3, 0.3, rightLength) * 0.001
     
     -- BATCH update both lasers (move + resize at same time)
-    pcall(function()
+    local success = pcall(function()
         ep:InvokeServer("SyncResize", {
             {Part = leftLaser, Size = leftStealthSize, CFrame = leftCF},
             {Part = rightLaser, Size = rightStealthSize, CFrame = rightCF}
         })
     end)
+    
+    -- Debug print (throttled to 1 per second)
+    if currentTime - lastLaserDebugPrint >= 1 then
+        lastLaserDebugPrint = currentTime
+        print(string.format("🔴 Lasers: L=%.1f studs, R=%.1f studs | Update: %s", 
+            leftLength, rightLength, success and "✅" or "❌"))
+    end
     
     -- Destroy parts along laser paths (MUCH SLOWER UPDATE RATE)
     if currentTime - lastDestructionUpdate >= DESTRUCTION_UPDATE_RATE then
