@@ -1,0 +1,1002 @@
+-- OPTIMIZED Raid Roleplay F3X Plugin for Infinite Yield
+-- Ultra-fast scanning with GetChildren() instead of GetDescendants()
+-- Created by motorolav99
+
+local Plugin = {
+	["PluginName"] = "RR F3X Tools (Optimized)",
+	["PluginDescription"] = "Fast F3X Building Tools exploitation",
+	["Commands"] = {},
+}
+
+-- Utility Functions
+local function notify(message)
+	game:GetService("StarterGui"):SetCore("SendNotification", {
+		Title = "F3X Tools",
+		Text = message,
+		Duration = 3,
+	})
+end
+
+local function getF3XTool()
+	local player = game:GetService("Players").LocalPlayer
+	
+	local tool = player.Backpack:FindFirstChild("Building Tools") 
+		or player.Backpack:FindFirstChild("Building Tools Plus")
+		or (player.Character and player.Character:FindFirstChild("Building Tools"))
+		or (player.Character and player.Character:FindFirstChild("Building Tools Plus"))
+	
+	if not tool then
+		notify("F3X Building Tools not found!")
+		return nil
+	end
+	
+	local syncAPI = tool:FindFirstChild("SyncAPI")
+	if not syncAPI then
+		notify("SyncAPI not found!")
+		return nil
+	end
+	
+	local serverEndpoint = syncAPI:FindFirstChild("ServerEndpoint")
+	if not serverEndpoint then
+		notify("ServerEndpoint not found!")
+		return nil
+	end
+	
+	return serverEndpoint
+end
+
+local function claimOwnershipFast(parts)
+	-- Use EscalateEvent for INSTANT ownership claim (like TornadoWand!)
+	local RS = game:GetService("ReplicatedStorage")
+	pcall(function()
+		local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+		local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+		EscalateEvent:FireServer(PartOwnership, parts)
+	end)
+	task.wait(0.15)
+end
+
+local function getPlayerParts(player)
+	if not player.Character then return {} end
+	
+	local parts = {}
+	for _, descendant in ipairs(player.Character:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+	return parts
+end
+
+-- OPTIMIZED: Use GetChildren() recursively instead of GetDescendants()
+local function getBuildParts(ownerName)
+	local parts = {}
+	local lowerName = ownerName:lower()
+	
+	local function scanFolder(folder)
+		for _, obj in ipairs(folder:GetChildren()) do
+			if obj:IsA("BasePart") then
+				local owner = obj:FindFirstChild("RRPartOwner")
+				if owner and owner:IsA("StringValue") and owner.Value:lower():find(lowerName) then
+					table.insert(parts, obj)
+				end
+			elseif obj:IsA("Model") or obj:IsA("Folder") then
+				scanFolder(obj)
+			end
+		end
+	end
+	
+	scanFolder(workspace)
+	return parts
+end
+
+-- ========================================
+-- COMMANDS
+-- ========================================
+
+-- List all commands
+Plugin.Commands["cmds"] = {
+	["ListName"] = "cmds / f3xcmds",
+	["Description"] = "List all F3X plugin commands",
+	["Aliases"] = {"f3xcmds"},
+	["Function"] = function(args, speaker)
+		print("========================================")
+		print("F3X PLUGIN COMMANDS:")
+		print("========================================")
+		
+		local commandList = {
+			";deletebuild [name] - Delete all parts owned by player",
+			";freeze [player] - Anchor all body parts",
+			";unfreeze [player] - Unanchor all body parts",
+			";invisible [player] - Make player invisible",
+			";visible [player] - Make player visible",
+			";neon [player] - Change material to Neon",
+			";colorplayer [player] [r] [g] [b] - RGB color (0-255)",
+			";removelimb [player] [limb] - Remove limb (head/torso/leftarm/rightarm/leftleg/rightleg)",
+			";lockplayer [player] - Lock parts",
+			";unlockplayer [player] - Unlock parts",
+			";bring [player] - Teleport player to you",
+			";bringbuild [name] - Bring all owned parts to you",
+			";fling [player] - Launch player",
+			";spin [player] - Rotate player 50 times",
+			";explode [player] - Scatter body parts",
+			";shrink [player] - Scale down to 10%",
+			";giant [player] - Scale up 3x",
+		}
+		
+		for _, cmd in ipairs(commandList) do
+			print(cmd)
+		end
+		
+		print("========================================")
+		notify("Commands printed to console (F9)")
+	end,
+}
+
+Plugin.Commands["deletebuild"] = {
+	["ListName"] = "deletebuild / delbuild",
+	["Description"] = "Delete all parts owned by a player",
+	["Aliases"] = {"delbuild"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;deletebuild [playername]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local targetName = table.concat(args, " ")
+		notify("Scanning for parts...")
+		
+		local parts = getBuildParts(targetName)
+		
+		if #parts == 0 then
+			notify("No parts found owned by " .. targetName)
+			return
+		end
+		
+		notify("Deleting " .. #parts .. " parts...")
+		
+		-- Claim ownership using EscalateEvent (INSTANT like TornadoWand!)
+		local RS = game:GetService("ReplicatedStorage")
+		pcall(function()
+			local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+			local PartOwnership = RS.raidRoleplay.Modules.PartOwnership
+			EscalateEvent:FireServer(PartOwnership, parts)
+		end)
+		
+		task.wait(0.15)
+		
+		-- Delete ALL parts in PARALLEL (like TornadoWand.lua!)
+		local deletedCount = 0
+		for _, part in ipairs(parts) do
+			if part and part.Parent then
+				task.spawn(function()
+					local success = pcall(function()
+						-- Step 1: Group the part
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+						task.wait(0.01)
+						
+						-- Step 2: Ungroup it (claims ownership)
+						serverEndpoint:InvokeServer("Ungroup", {part})
+						task.wait(0.01)
+						
+						-- Step 3: Remove the part
+						if part and part.Parent then
+							serverEndpoint:InvokeServer("Remove", {part})
+							deletedCount = deletedCount + 1
+						end
+					end)
+					
+					if not success then
+						-- Fallback: Try direct remove
+						pcall(function()
+							serverEndpoint:InvokeServer("Remove", {part})
+							deletedCount = deletedCount + 1
+						end)
+					end
+				end)
+				
+				task.wait(0.0001) -- Don't delay the sending process
+			end
+		end
+		
+		-- Wait for all spawned tasks to complete
+		task.wait(0.3)
+		notify("Deleted " .. deletedCount .. " / " .. #parts .. " parts!")
+	end,
+}
+
+Plugin.Commands["freeze"] = {
+	["ListName"] = "freeze / anchor",
+	["Description"] = "Freeze a player",
+	["Aliases"] = {"anchor"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;freeze [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			-- Anchor ALL parts in PARALLEL
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncAnchor", {{Part = part, Anchored = true}})
+					end)
+				end)
+			end
+			
+			notify("Froze " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["unfreeze"] = {
+	["ListName"] = "unfreeze / unanchor",
+	["Description"] = "Unfreeze a player",
+	["Aliases"] = {"unanchor"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;unfreeze [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			-- Unanchor ALL parts in PARALLEL
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncAnchor", {{Part = part, Anchored = false}})
+					end)
+				end)
+			end
+			
+			notify("Unfroze " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["invisible"] = {
+	["ListName"] = "invisible / invis",
+	["Description"] = "Make a player invisible",
+	["Aliases"] = {"invis"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;invisible [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncMaterial", {{Part = part, Material = Enum.Material.ForceField, Transparency = 1, Reflectance = 0}})
+					end)
+				end)
+			end
+			
+			notify("Made " .. plr.Name .. " invisible")
+		end
+	end,
+}
+
+Plugin.Commands["visible"] = {
+	["ListName"] = "visible / vis",
+	["Description"] = "Make a player visible",
+	["Aliases"] = {"vis"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;visible [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncMaterial", {{Part = part, Material = part.Material, Transparency = 0, Reflectance = 0}})
+					end)
+				end)
+			end
+			
+			notify("Made " .. plr.Name .. " visible")
+		end
+	end,
+}
+
+Plugin.Commands["neon"] = {
+	["ListName"] = "neon",
+	["Description"] = "Make player neon",
+	["Aliases"] = {},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;neon [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncMaterial", {{Part = part, Material = Enum.Material.Neon, Transparency = 0, Reflectance = 0}})
+					end)
+				end)
+			end
+			
+			notify("Made " .. plr.Name .. " neon")
+		end
+	end,
+}
+
+Plugin.Commands["colorplayer"] = {
+	["ListName"] = "colorplayer / colorply / rgb",
+	["Description"] = "Change player color (RGB 0-255)",
+	["Aliases"] = {"colorply", "rgb"},
+	["Function"] = function(args, speaker)
+		if #args < 4 then
+			notify("Usage: ;colorplayer [player] [r] [g] [b]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		local r = math.clamp(tonumber(args[2]) or 255, 0, 255) / 255
+		local g = math.clamp(tonumber(args[3]) or 255, 0, 255) / 255
+		local b = math.clamp(tonumber(args[4]) or 255, 0, 255) / 255
+		
+		local color = Color3.new(r, g, b)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncColor", {{Part = part, Color = color}})
+					end)
+				end)
+			end
+			
+			notify("Colored " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["removelimb"] = {
+	["ListName"] = "removelimb / remlimb",
+	["Description"] = "Remove limb (head/torso/arms/legs)",
+	["Aliases"] = {"remlimb"},
+	["Function"] = function(args, speaker)
+		if #args < 2 then
+			notify("Usage: ;removelimb [player] [head/torso/arms/legs]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		local limb = args[2]:lower()
+		
+		local limbMap = {
+			["head"] = {"Head"},
+			["torso"] = {"UpperTorso", "LowerTorso"},
+			["arms"] = {"LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftHand", "RightHand"},
+			["legs"] = {"LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg", "LeftFoot", "RightFoot"},
+		}
+		
+		local limbNames = limbMap[limb]
+		if not limbNames then
+			notify("Invalid limb!")
+			return
+		end
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character then continue end
+			
+			local partsToRemove = {}
+			for _, limbName in ipairs(limbNames) do
+				local part = plr.Character:FindFirstChild(limbName)
+				if part and part:IsA("BasePart") then
+					table.insert(partsToRemove, part)
+				end
+			end
+			
+			if #partsToRemove == 0 then continue end
+			
+			claimOwnershipFast(partsToRemove)
+			
+			for _, part in ipairs(partsToRemove) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Remove", {part})
+					end)
+				end)
+			end
+			
+			notify("Removed " .. limb .. " from " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["lockplayer"] = {
+	["ListName"] = "lockplayer / lockply",
+	["Description"] = "Lock player parts",
+	["Aliases"] = {"lockply"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;lockplayer [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SetLocked", {part}, true)
+					end)
+				end)
+			end
+			
+			notify("Locked " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["unlockplayer"] = {
+	["ListName"] = "unlockplayer / unlockply",
+	["Description"] = "Unlock player parts",
+	["Aliases"] = {"unlockply"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;unlockplayer [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			claimOwnershipFast(parts)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SetLocked", {part}, false)
+					end)
+				end)
+			end
+			
+			notify("Unlocked " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["bring"] = {
+	["ListName"] = "bring / tp",
+	["Description"] = "Teleport player to you",
+	["Aliases"] = {"tp"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;bring [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		if not speaker.Character or not speaker.Character:FindFirstChild("HumanoidRootPart") then
+			notify("You need a character!")
+			return
+		end
+		
+		local myPos = speaker.Character.HumanoidRootPart.CFrame
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then continue end
+			
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			local hrp = plr.Character.HumanoidRootPart
+			
+			-- Claim ownership using group/ungroup (REQUIRED for move!)
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.05)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			-- Bring ALL parts in PARALLEL with task.spawn
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						local relativePos = hrp.CFrame:ToObjectSpace(part.CFrame)
+						local newCFrame = (myPos * CFrame.new(0, 0, -5)) * relativePos
+						serverEndpoint:InvokeServer("SyncMove", {{Part = part, CFrame = newCFrame}})
+					end)
+				end)
+			end
+			
+			notify("Brought " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["bringbuild"] = {
+	["ListName"] = "bringbuild / bringb",
+	["Description"] = "Bring player's build to you",
+	["Aliases"] = {"bringb"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;bringbuild [playername]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		if not speaker.Character or not speaker.Character:FindFirstChild("HumanoidRootPart") then
+			notify("You need a character!")
+			return
+		end
+		
+		local targetName = table.concat(args, " ")
+		notify("Scanning for parts...")
+		
+		local parts = getBuildParts(targetName)
+		
+		if #parts == 0 then
+			notify("No parts found")
+			return
+		end
+		
+		notify("Bringing " .. #parts .. " parts...")
+		
+		-- Claim ownership using group/ungroup (REQUIRED for move!)
+		for _, part in ipairs(parts) do
+			task.spawn(function()
+				pcall(function()
+					serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+				end)
+			end)
+		end
+		
+		task.wait(0.05)
+		
+		for _, part in ipairs(parts) do
+			task.spawn(function()
+				pcall(function()
+					serverEndpoint:InvokeServer("Ungroup", {part})
+				end)
+			end)
+		end
+		
+		task.wait(0.1)
+		
+		local myPos = speaker.Character.HumanoidRootPart.Position
+		local stackHeight = 0
+		
+		-- Bring ALL parts in PARALLEL with task.spawn
+		for _, part in ipairs(parts) do
+			task.spawn(function()
+				pcall(function()
+					local newCFrame = CFrame.new(myPos + Vector3.new(0, 10 + stackHeight, 0))
+					serverEndpoint:InvokeServer("SyncMove", {{Part = part, CFrame = newCFrame}})
+				end)
+			end)
+			
+			stackHeight = stackHeight + 0.5
+		end
+		
+		notify("Done!")
+	end,
+}
+
+Plugin.Commands["fling"] = {
+	["ListName"] = "fling / fl",
+	["Description"] = "Fling a player",
+	["Aliases"] = {"fl"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;fling [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			-- Claim ownership using group/ungroup
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.05)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			-- Unanchor first
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncAnchor", {{Part = part, Anchored = false}})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			-- Then fling
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						local randomVec = Vector3.new(
+							math.random(-100, 100),
+							math.random(50, 150),
+							math.random(-100, 100)
+						)
+						serverEndpoint:InvokeServer("SyncMove", {{Part = part, CFrame = part.CFrame + randomVec}})
+					end)
+				end)
+			end
+			
+			notify("Flung " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["spin"] = {
+	["ListName"] = "spin",
+	["Description"] = "Spin a player",
+	["Aliases"] = {},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;spin [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then continue end
+			
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			-- Claim ownership using group/ungroup
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.05)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			notify("Spinning " .. plr.Name)
+			
+			task.spawn(function()
+				for i = 1, 50 do
+					local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+					if not hrp then break end
+					
+					for _, part in ipairs(parts) do
+						pcall(function()
+							local relativePos = hrp.CFrame:ToObjectSpace(part.CFrame)
+							local newCFrame = (hrp.CFrame * CFrame.Angles(0, math.rad(36), 0)) * relativePos
+							serverEndpoint:InvokeServer("SyncMove", {{Part = part, CFrame = newCFrame}})
+						end)
+					end
+					
+					task.wait(0.05)
+				end
+			end)
+		end
+	end,
+}
+
+Plugin.Commands["explode"] = {
+	["ListName"] = "explode / boom",
+	["Description"] = "Explode a player",
+	["Aliases"] = {"boom"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;explode [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then continue end
+			
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			local center = plr.Character.HumanoidRootPart.Position
+			
+			-- Step 1: Group all parts in parallel (claim ownership)
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+				task.wait(0.0001)
+			end
+			task.wait(0.1)
+			
+			-- Step 2: Ungroup all parts in parallel
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+				task.wait(0.0001)
+			end
+			task.wait(0.15)
+			
+			-- Step 3: Unanchor all parts in parallel
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncAnchor", {{Part = part, Anchored = false}})
+					end)
+				end)
+				task.wait(0.0001)
+			end
+			task.wait(0.1)
+			
+			-- Step 4: Scatter parts in random directions
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						local direction = (part.Position - center).Unit
+						local distance = math.random(20, 50)
+						serverEndpoint:InvokeServer("SyncMove", {{Part = part, CFrame = CFrame.new(center + direction * distance)}})
+					end)
+				end)
+				task.wait(0.0001)
+			end
+			
+			notify("Exploded " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["shrink"] = {
+	["ListName"] = "shrink / tiny",
+	["Description"] = "Shrink a player",
+	["Aliases"] = {"tiny"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;shrink [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character then continue end
+			
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			-- Claim ownership using group/ungroup (REQUIRED for resize!)
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.05)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			-- Now resize in parallel
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncResize", {{Part = part, Size = part.Size * 0.1, CFrame = part.CFrame}})
+					end)
+				end)
+			end
+			
+			notify("Shrunk " .. plr.Name)
+		end
+	end,
+}
+
+Plugin.Commands["giant"] = {
+	["ListName"] = "giant / grow",
+	["Description"] = "Make player giant",
+	["Aliases"] = {"grow"},
+	["Function"] = function(args, speaker)
+		if #args < 1 then
+			notify("Usage: ;giant [player]")
+			return
+		end
+		
+		local serverEndpoint = getF3XTool()
+		if not serverEndpoint then return end
+		
+		local players = getPlayer(args[1], speaker)
+		
+		for _, plr in ipairs(players) do
+			if not plr.Character then continue end
+			
+			local parts = getPlayerParts(plr)
+			if #parts == 0 then continue end
+			
+			-- Claim ownership using group/ungroup (REQUIRED for resize!)
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("CreateGroup", "Model", workspace, {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.05)
+			
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("Ungroup", {part})
+					end)
+				end)
+			end
+			
+			task.wait(0.1)
+			
+			-- Now resize in parallel
+			for _, part in ipairs(parts) do
+				task.spawn(function()
+					pcall(function()
+						serverEndpoint:InvokeServer("SyncResize", {{Part = part, Size = part.Size * 3, CFrame = part.CFrame}})
+					end)
+				end)
+			end
+			
+			notify("Made " .. plr.Name .. " giant")
+		end
+	end,
+}
+
+return Plugin
