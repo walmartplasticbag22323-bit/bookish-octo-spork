@@ -1,0 +1,1192 @@
+-- Destroyer GUI v1.0 - Built-in Explorer Edition
+-- F3XPartModificationLimit exploit - Delete anything server-side!
+-- No external dependencies - fully self-contained explorer
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local mouse = player:GetMouse()
+
+-- F3X Exploit Setup
+local RS = ReplicatedStorage
+local F3XLimit = RS.raidRoleplay.Modules.F3XPartModificationLimit
+local EscalateEvent = RS.raidRoleplay.Events.EscalateEvent
+
+-- Destroy function using F3XPartModificationLimit exploit
+local function destroyObject(object)
+	print("[EXPLOIT] Using F3XPartModificationLimit.escalatedEvent")
+	print("[TARGET]", object:GetFullName())
+	
+	local success, err = pcall(function()
+		EscalateEvent:FireServer(F3XLimit, object)
+	end)
+	
+	if success then
+		print("[FIRED] EscalateEvent with F3XPartModificationLimit")
+		wait(0.5)
+		
+		-- Check if destroyed
+		local stillExists = pcall(function() return object.Parent end)
+		if not stillExists or object.Parent == nil then
+			print("[SUCCESS] Object destroyed!")
+			return true
+		else
+			warn("[FAILED] Object still exists")
+			return false
+		end
+	else
+		warn("[ERROR] FireServer failed:", err)
+		return false
+	end
+end
+
+-- Create GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DestroyerGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 700, 0, 450)
+mainFrame.Position = UDim2.new(0.5, -350, 0.5, -225)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(60, 60, 60)
+mainStroke.Thickness = 2
+mainStroke.Parent = mainFrame
+
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 35)
+titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, -100, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "💀 Destroyer v1.0 - F3XPartModificationLimit Exploit"
+titleLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 25, 0, 25)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextSize = 16
+closeButton.Font = Enum.Font.GothamBold
+closeButton.BorderSizePixel = 0
+closeButton.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 4)
+closeCorner.Parent = closeButton
+
+-- Content Frame (Left side - Controls)
+local contentFrame = Instance.new("Frame")
+contentFrame.Name = "ContentFrame"
+contentFrame.Size = UDim2.new(0, 320, 1, -60)
+contentFrame.Position = UDim2.new(0, 10, 0, 50)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+-- Explorer Frame (Right side)
+local explorerFrame = Instance.new("Frame")
+explorerFrame.Name = "ExplorerFrame"
+explorerFrame.Size = UDim2.new(0, 350, 1, -60)
+explorerFrame.Position = UDim2.new(1, -360, 0, 50)
+explorerFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+explorerFrame.BorderSizePixel = 0
+explorerFrame.Parent = mainFrame
+
+local explorerCorner = Instance.new("UICorner")
+explorerCorner.CornerRadius = UDim.new(0, 6)
+explorerCorner.Parent = explorerFrame
+
+local explorerStroke = Instance.new("UIStroke")
+explorerStroke.Color = Color3.fromRGB(50, 50, 50)
+explorerStroke.Thickness = 1
+explorerStroke.Parent = explorerFrame
+
+-- Explorer Title
+local explorerTitle = Instance.new("TextLabel")
+explorerTitle.Name = "ExplorerTitle"
+explorerTitle.Size = UDim2.new(1, -10, 0, 25)
+explorerTitle.Position = UDim2.new(0, 5, 0, 5)
+explorerTitle.BackgroundTransparency = 1
+explorerTitle.Text = "🔍 Explorer"
+explorerTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+explorerTitle.TextSize = 13
+explorerTitle.Font = Enum.Font.GothamBold
+explorerTitle.TextXAlignment = Enum.TextXAlignment.Left
+explorerTitle.Parent = explorerFrame
+
+-- Search Bar
+local searchBar = Instance.new("TextBox")
+searchBar.Name = "SearchBar"
+searchBar.Size = UDim2.new(1, -10, 0, 28)
+searchBar.Position = UDim2.new(0, 5, 0, 32)
+searchBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+searchBar.BorderSizePixel = 0
+searchBar.Text = ""
+searchBar.PlaceholderText = "🔎 Search objects..."
+searchBar.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+searchBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBar.TextSize = 12
+searchBar.Font = Enum.Font.Gotham
+searchBar.TextXAlignment = Enum.TextXAlignment.Left
+searchBar.ClearTextOnFocus = false
+searchBar.Parent = explorerFrame
+
+local searchBarCorner = Instance.new("UICorner")
+searchBarCorner.CornerRadius = UDim.new(0, 4)
+searchBarCorner.Parent = searchBar
+
+local searchBarPadding = Instance.new("UIPadding")
+searchBarPadding.PaddingLeft = UDim.new(0, 8)
+searchBarPadding.PaddingRight = UDim.new(0, 8)
+searchBarPadding.Parent = searchBar
+
+-- Filter Parts Checkbox
+local filterPartsFrame = Instance.new("Frame")
+filterPartsFrame.Name = "FilterPartsFrame"
+filterPartsFrame.Size = UDim2.new(1, -10, 0, 22)
+filterPartsFrame.Position = UDim2.new(0, 5, 0, 65)
+filterPartsFrame.BackgroundTransparency = 1
+filterPartsFrame.Parent = explorerFrame
+
+local filterPartsCheckbox = Instance.new("TextButton")
+filterPartsCheckbox.Name = "FilterPartsCheckbox"
+filterPartsCheckbox.Size = UDim2.new(0, 18, 0, 18)
+filterPartsCheckbox.Position = UDim2.new(0, 0, 0, 2)
+filterPartsCheckbox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+filterPartsCheckbox.Text = ""
+filterPartsCheckbox.BorderSizePixel = 0
+filterPartsCheckbox.Parent = filterPartsFrame
+
+local filterPartsCheckboxCorner = Instance.new("UICorner")
+filterPartsCheckboxCorner.CornerRadius = UDim.new(0, 3)
+filterPartsCheckboxCorner.Parent = filterPartsCheckbox
+
+local filterPartsCheckmark = Instance.new("TextLabel")
+filterPartsCheckmark.Name = "Checkmark"
+filterPartsCheckmark.Size = UDim2.new(1, 0, 1, 0)
+filterPartsCheckmark.BackgroundTransparency = 1
+filterPartsCheckmark.Text = "✓"
+filterPartsCheckmark.TextColor3 = Color3.fromRGB(100, 255, 100)
+filterPartsCheckmark.TextSize = 14
+filterPartsCheckmark.Font = Enum.Font.GothamBold
+filterPartsCheckmark.Visible = false
+filterPartsCheckmark.Parent = filterPartsCheckbox
+
+local filterPartsLabel = Instance.new("TextLabel")
+filterPartsLabel.Name = "FilterPartsLabel"
+filterPartsLabel.Size = UDim2.new(1, -25, 1, 0)
+filterPartsLabel.Position = UDim2.new(0, 25, 0, 0)
+filterPartsLabel.BackgroundTransparency = 1
+filterPartsLabel.Text = "Filter out Parts named 'Part'"
+filterPartsLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+filterPartsLabel.TextSize = 11
+filterPartsLabel.Font = Enum.Font.Gotham
+filterPartsLabel.TextXAlignment = Enum.TextXAlignment.Left
+filterPartsLabel.Parent = filterPartsFrame
+
+-- Explorer ScrollingFrame
+local explorerScroll = Instance.new("ScrollingFrame")
+explorerScroll.Name = "ExplorerScroll"
+explorerScroll.Size = UDim2.new(1, -10, 1, -100)
+explorerScroll.Position = UDim2.new(0, 5, 0, 92)
+explorerScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+explorerScroll.BorderSizePixel = 0
+explorerScroll.ScrollBarThickness = 6
+explorerScroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
+explorerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+explorerScroll.Parent = explorerFrame
+
+local explorerScrollCorner = Instance.new("UICorner")
+explorerScrollCorner.CornerRadius = UDim.new(0, 4)
+explorerScrollCorner.Parent = explorerScroll
+
+local explorerLayout = Instance.new("UIListLayout")
+explorerLayout.SortOrder = Enum.SortOrder.LayoutOrder
+explorerLayout.Padding = UDim.new(0, 2)
+explorerLayout.Parent = explorerScroll
+
+-- Auto-update canvas size when content changes
+explorerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	explorerScroll.CanvasSize = UDim2.new(0, 0, 0, explorerLayout.AbsoluteContentSize.Y)
+end)
+
+-- Target Section
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Name = "TargetLabel"
+targetLabel.Size = UDim2.new(1, 0, 0, 25)
+targetLabel.Position = UDim2.new(0, 0, 0, 0)
+targetLabel.BackgroundTransparency = 1
+targetLabel.Text = "💀 Target to Destroy:"
+targetLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+targetLabel.TextSize = 14
+targetLabel.Font = Enum.Font.GothamBold
+targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+targetLabel.Parent = contentFrame
+
+local targetDisplay = Instance.new("TextLabel")
+targetDisplay.Name = "TargetDisplay"
+targetDisplay.Size = UDim2.new(1, 0, 0, 30)
+targetDisplay.Position = UDim2.new(0, 0, 0, 30)
+targetDisplay.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+targetDisplay.Text = "None"
+targetDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+targetDisplay.TextSize = 12
+targetDisplay.Font = Enum.Font.Gotham
+targetDisplay.BorderSizePixel = 0
+targetDisplay.Parent = contentFrame
+
+local targetDisplayCorner = Instance.new("UICorner")
+targetDisplayCorner.CornerRadius = UDim.new(0, 4)
+targetDisplayCorner.Parent = targetDisplay
+
+-- Target Buttons
+local targetClickButton = Instance.new("TextButton")
+targetClickButton.Name = "TargetClickButton"
+targetClickButton.Size = UDim2.new(0.48, 0, 0, 30)
+targetClickButton.Position = UDim2.new(0, 0, 0, 65)
+targetClickButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+targetClickButton.Text = "Click on Screen"
+targetClickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetClickButton.TextSize = 12
+targetClickButton.Font = Enum.Font.GothamBold
+targetClickButton.BorderSizePixel = 0
+targetClickButton.Parent = contentFrame
+
+local targetClickCorner = Instance.new("UICorner")
+targetClickCorner.CornerRadius = UDim.new(0, 4)
+targetClickCorner.Parent = targetClickButton
+
+local targetExplorerButton = Instance.new("TextButton")
+targetExplorerButton.Name = "TargetExplorerButton"
+targetExplorerButton.Size = UDim2.new(0.48, 0, 0, 30)
+targetExplorerButton.Position = UDim2.new(0.52, 0, 0, 65)
+targetExplorerButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+targetExplorerButton.Text = "Select from Explorer"
+targetExplorerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetExplorerButton.TextSize = 12
+targetExplorerButton.Font = Enum.Font.GothamBold
+targetExplorerButton.BorderSizePixel = 0
+targetExplorerButton.Parent = contentFrame
+
+local targetExplorerCorner = Instance.new("UICorner")
+targetExplorerCorner.CornerRadius = UDim.new(0, 4)
+targetExplorerCorner.Parent = targetExplorerButton
+
+-- Quick Actions Section
+local quickActionsLabel = Instance.new("TextLabel")
+quickActionsLabel.Name = "QuickActionsLabel"
+quickActionsLabel.Size = UDim2.new(1, 0, 0, 25)
+quickActionsLabel.Position = UDim2.new(0, 0, 0, 110)
+quickActionsLabel.BackgroundTransparency = 1
+quickActionsLabel.Text = "⚡ Quick Actions:"
+quickActionsLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+quickActionsLabel.TextSize = 14
+quickActionsLabel.Font = Enum.Font.GothamBold
+quickActionsLabel.TextXAlignment = Enum.TextXAlignment.Left
+quickActionsLabel.Parent = contentFrame
+
+-- Quick Action Buttons
+local destroyBuildingToolsButton = Instance.new("TextButton")
+destroyBuildingToolsButton.Name = "DestroyBuildingToolsButton"
+destroyBuildingToolsButton.Size = UDim2.new(1, 0, 0, 30)
+destroyBuildingToolsButton.Position = UDim2.new(0, 0, 0, 140)
+destroyBuildingToolsButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+destroyBuildingToolsButton.Text = "🔨 Destroy All Building Tools"
+destroyBuildingToolsButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyBuildingToolsButton.TextSize = 12
+destroyBuildingToolsButton.Font = Enum.Font.GothamBold
+destroyBuildingToolsButton.BorderSizePixel = 0
+destroyBuildingToolsButton.Parent = contentFrame
+
+local destroyBTCorner = Instance.new("UICorner")
+destroyBTCorner.CornerRadius = UDim.new(0, 4)
+destroyBTCorner.Parent = destroyBuildingToolsButton
+
+local destroyPlayerKickButton = Instance.new("TextButton")
+destroyPlayerKickButton.Name = "DestroyPlayerKickButton"
+destroyPlayerKickButton.Size = UDim2.new(1, 0, 0, 30)
+destroyPlayerKickButton.Position = UDim2.new(0, 0, 0, 175)
+destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+destroyPlayerKickButton.Text = "🚫 Destroy PlayerKick Remote"
+destroyPlayerKickButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyPlayerKickButton.TextSize = 12
+destroyPlayerKickButton.Font = Enum.Font.GothamBold
+destroyPlayerKickButton.BorderSizePixel = 0
+destroyPlayerKickButton.Parent = contentFrame
+
+local destroyPKCorner = Instance.new("UICorner")
+destroyPKCorner.CornerRadius = UDim.new(0, 4)
+destroyPKCorner.Parent = destroyPlayerKickButton
+
+local destroyAllHeadsButton = Instance.new("TextButton")
+destroyAllHeadsButton.Name = "DestroyAllHeadsButton"
+destroyAllHeadsButton.Size = UDim2.new(1, 0, 0, 30)
+destroyAllHeadsButton.Position = UDim2.new(0, 0, 0, 210)
+destroyAllHeadsButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+destroyAllHeadsButton.Text = "💀 Destroy All Player Heads"
+destroyAllHeadsButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyAllHeadsButton.TextSize = 12
+destroyAllHeadsButton.Font = Enum.Font.GothamBold
+destroyAllHeadsButton.BorderSizePixel = 0
+destroyAllHeadsButton.Parent = contentFrame
+
+local destroyHeadsCorner = Instance.new("UICorner")
+destroyHeadsCorner.CornerRadius = UDim.new(0, 4)
+destroyHeadsCorner.Parent = destroyAllHeadsButton
+
+local destroyAllPlayersButton = Instance.new("TextButton")
+destroyAllPlayersButton.Name = "DestroyAllPlayersButton"
+destroyAllPlayersButton.Size = UDim2.new(1, 0, 0, 30)
+destroyAllPlayersButton.Position = UDim2.new(0, 0, 0, 245)
+destroyAllPlayersButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+destroyAllPlayersButton.Text = "☠️ DESTROY ALL PLAYERS (NUKE)"
+destroyAllPlayersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyAllPlayersButton.TextSize = 12
+destroyAllPlayersButton.Font = Enum.Font.GothamBold
+destroyAllPlayersButton.BorderSizePixel = 0
+destroyAllPlayersButton.Parent = contentFrame
+
+local destroyPlayersCorner = Instance.new("UICorner")
+destroyPlayersCorner.CornerRadius = UDim.new(0, 4)
+destroyPlayersCorner.Parent = destroyAllPlayersButton
+
+-- Destroy Button
+local destroyButton = Instance.new("TextButton")
+destroyButton.Name = "DestroyButton"
+destroyButton.Size = UDim2.new(1, 0, 0, 35)
+destroyButton.Position = UDim2.new(0, 0, 1, -35)
+destroyButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+destroyButton.Text = "💥 DESTROY TARGET"
+destroyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+destroyButton.TextSize = 14
+destroyButton.Font = Enum.Font.GothamBold
+destroyButton.BorderSizePixel = 0
+destroyButton.Parent = contentFrame
+
+local destroyCorner = Instance.new("UICorner")
+destroyCorner.CornerRadius = UDim.new(0, 4)
+destroyCorner.Parent = destroyButton
+
+-- Selection Box
+local selectionBox = Instance.new("SelectionBox")
+selectionBox.LineThickness = 0.05
+selectionBox.Color3 = Color3.fromRGB(255, 0, 0)
+selectionBox.Adornee = nil
+selectionBox.Parent = workspace
+
+-- Variables
+local targetObject = nil
+local isSelecting = false
+local highlightConnection = nil
+local explorerSelectionMode = nil
+local nodeObjects = {} -- Map node frames to their objects
+local clickConnection = nil
+local filterPartsEnabled = false
+
+-- Filter Parts Checkbox Logic
+filterPartsCheckbox.MouseButton1Click:Connect(function()
+	filterPartsEnabled = not filterPartsEnabled
+	filterPartsCheckmark.Visible = filterPartsEnabled
+	
+	if filterPartsEnabled then
+		filterPartsCheckbox.BackgroundColor3 = Color3.fromRGB(50, 100, 50)
+		print("✓ Filtering out parts named 'Part'")
+	else
+		filterPartsCheckbox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		print("✗ Showing all parts")
+	end
+	
+	-- Rebuild tree with filter applied
+	buildExplorerTree()
+end)
+
+-- Functions
+local function updateDisplay()
+	if targetObject then
+		targetDisplay.Text = targetObject:GetFullName()
+		targetDisplay.TextColor3 = Color3.fromRGB(255, 100, 100)
+	else
+		targetDisplay.Text = "None"
+		targetDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+end
+
+local function stopSelecting()
+	isSelecting = false
+	selectionBox.Adornee = nil
+	if highlightConnection then
+		highlightConnection:Disconnect()
+		highlightConnection = nil
+	end
+	if clickConnection then
+		clickConnection:Disconnect()
+		clickConnection = nil
+	end
+end
+
+local function startClickSelection()
+	-- If already selecting, cancel it
+	if isSelecting then
+		stopSelecting()
+		targetClickButton.Text = "Click on Screen"
+		return
+	end
+	
+	isSelecting = true
+	targetClickButton.Text = "Cancel"
+	
+	selectionBox.Color3 = Color3.fromRGB(255, 0, 0)
+	
+	highlightConnection = RunService.RenderStepped:Connect(function()
+		local target = mouse.Target
+		if target then
+			selectionBox.Adornee = target
+		else
+			selectionBox.Adornee = nil
+		end
+	end)
+	
+	clickConnection = mouse.Button1Down:Connect(function()
+		local target = mouse.Target
+		if target then
+			targetObject = target
+			targetClickButton.Text = "Click on Screen"
+			updateDisplay()
+		end
+		stopSelecting()
+	end)
+end
+
+-- Explorer Node Creation
+local function createExplorerNode(object, depth, layoutOrder)
+	local nodeFrame = Instance.new("Frame")
+	nodeFrame.Name = "Node_" .. object.Name
+	nodeFrame.Size = UDim2.new(1, -10, 0, 22)
+	nodeFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	nodeFrame.BorderSizePixel = 0
+	nodeFrame.LayoutOrder = layoutOrder
+	
+	local nodeCorner = Instance.new("UICorner")
+	nodeCorner.CornerRadius = UDim.new(0, 3)
+	nodeCorner.Parent = nodeFrame
+	
+	-- Expand/Collapse Button
+	local expandButton = Instance.new("TextButton")
+	expandButton.Name = "ExpandButton"
+	expandButton.Size = UDim2.new(0, 18, 0, 18)
+	expandButton.Position = UDim2.new(0, 5 + (depth * 15), 0, 2)
+	expandButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	expandButton.Text = "+"
+	expandButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+	expandButton.TextSize = 12
+	expandButton.Font = Enum.Font.GothamBold
+	expandButton.BorderSizePixel = 0
+	expandButton.Parent = nodeFrame
+	
+	local expandCorner = Instance.new("UICorner")
+	expandCorner.CornerRadius = UDim.new(0, 3)
+	expandCorner.Parent = expandButton
+	
+	-- Check if object has children
+	local hasChildren = #object:GetChildren() > 0
+	if not hasChildren then
+		expandButton.Visible = false
+	end
+	
+	-- Object Name Label
+	local nameLabel = Instance.new("TextButton")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, -35 - (depth * 15), 0, 18)
+	nameLabel.Position = UDim2.new(0, 28 + (depth * 15), 0, 2)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = object.Name .. " (" .. object.ClassName .. ")"
+	nameLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+	nameLabel.TextSize = 11
+	nameLabel.Font = Enum.Font.Gotham
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Parent = nodeFrame
+	
+	-- Store object reference
+	nodeObjects[nodeFrame] = object
+	
+	return nodeFrame, expandButton, nameLabel, hasChildren
+end
+
+-- Build Explorer Tree
+local currentLayoutOrder = 0
+local childrenContainers = {}
+
+local function reorderAllNodes()
+	-- Recursively reorder all visible nodes in proper hierarchy
+	local order = 0
+	local function reorderNode(node)
+		if node.Visible then
+			node.LayoutOrder = order
+			order = order + 1
+			
+			local data = childrenContainers[node]
+			if data and data.expanded then
+				for _, childNode in ipairs(data.children) do
+					reorderNode(childNode)
+				end
+			end
+		end
+	end
+	
+	-- Reorder all root nodes and their children
+	for _, child in pairs(explorerScroll:GetChildren()) do
+		if child:IsA("Frame") and child.Name:match("^Node_") then
+			local data = childrenContainers[child]
+			if data and data.depth == 0 then
+				reorderNode(child)
+			end
+		end
+	end
+end
+
+local function addNode(object, depth, parentNode)
+	currentLayoutOrder = currentLayoutOrder + 1
+	local nodeFrame, expandButton, nameLabel, hasChildren = createExplorerNode(object, depth, currentLayoutOrder)
+	nodeFrame.Parent = explorerScroll
+	nodeFrame.Visible = (depth == 0) -- Only show root nodes initially
+	
+	-- Track children for this node
+	local childrenList = {}
+	childrenContainers[nodeFrame] = {
+		expanded = false, 
+		children = childrenList, 
+		childrenBuilt = false,
+		object = object, 
+		depth = depth,
+		parent = parentNode
+	}
+	
+	-- Expand/Collapse functionality
+	if hasChildren then
+		expandButton.MouseButton1Click:Connect(function()
+			-- Don't allow expansion during search
+			if searchBar.Text ~= "" then
+				print("⚠️ Clear search to expand nodes")
+				return
+			end
+			
+			local nodeData = childrenContainers[nodeFrame]
+			nodeData.expanded = not nodeData.expanded
+			expandButton.Text = nodeData.expanded and "-" or "+"
+			
+			if nodeData.expanded then
+				-- Build children if not already built
+				if not nodeData.childrenBuilt then
+					nodeData.childrenBuilt = true
+					local children = object:GetChildren()
+					
+					-- Sort children: Terrain first, Camera last, then alphabetically
+					table.sort(children, function(a, b)
+						local aIsTerrain = a.Name == "Terrain"
+						local bIsTerrain = b.Name == "Terrain"
+						local aIsCamera = a.Name == "Camera"
+						local bIsCamera = b.Name == "Camera"
+						
+						if aIsTerrain then return true end
+						if bIsTerrain then return false end
+						if aIsCamera then return false end
+						if bIsCamera then return true end
+						
+						return a.Name:lower() < b.Name:lower()
+					end)
+					
+					for i, child in ipairs(children) do
+						-- Skip parts named "Part" if filter is enabled
+						if not (filterPartsEnabled and child.Name == "Part" and child:IsA("BasePart")) then
+							local childNode = addNode(child, depth + 1, nodeFrame)
+							table.insert(nodeData.children, childNode)
+						end
+					end
+				end
+				
+				-- Show immediate children only
+				for _, childNode in ipairs(nodeData.children) do
+					childNode.Visible = true
+				end
+			else
+				-- Hide all children recursively
+				local function hideChildren(node)
+					local data = childrenContainers[node]
+					if data then
+						for _, childNode in ipairs(data.children) do
+							childNode.Visible = false
+							-- Collapse and hide their children too
+							if data.expanded then
+								data.expanded = false
+								local childExpandBtn = childNode:FindFirstChild("ExpandButton")
+								if childExpandBtn then
+									childExpandBtn.Text = "+"
+								end
+							end
+							hideChildren(childNode)
+						end
+					end
+				end
+				hideChildren(nodeFrame)
+			end
+			
+			-- Reorder all nodes to maintain hierarchy
+			reorderAllNodes()
+			
+			-- Update canvas size
+			task.wait()
+			local contentSize = explorerLayout.AbsoluteContentSize.Y
+			explorerScroll.CanvasSize = UDim2.new(0, 0, 0, contentSize)
+		end)
+	end
+	
+	-- Selection functionality
+	nameLabel.MouseButton1Click:Connect(function()
+		local obj = nodeObjects[nodeFrame]
+		if explorerSelectionMode == "target" then
+			targetObject = obj
+			targetExplorerButton.Text = "Select from Explorer"
+			targetExplorerButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+			explorerSelectionMode = nil
+			print("✓ Target selected:", obj.Name)
+			updateDisplay()
+		end
+	end)
+	
+	-- Hover effect
+	nameLabel.MouseEnter:Connect(function()
+		nodeFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	end)
+	nameLabel.MouseLeave:Connect(function()
+		nodeFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	end)
+	
+	return nodeFrame
+end
+
+local function buildExplorerTree()
+	print("Building explorer tree...")
+	
+	-- Save expanded state before clearing
+	local expandedPaths = {}
+	for nodeFrame, data in pairs(childrenContainers) do
+		if data.expanded then
+			local obj = data.object
+			if obj and obj.Parent then
+				expandedPaths[obj:GetFullName()] = true
+			end
+		end
+	end
+	
+	-- Clear existing
+	for _, child in pairs(explorerScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+	
+	nodeObjects = {}
+	childrenContainers = {}
+	currentLayoutOrder = 0
+	
+	-- Add main services
+	local services = {
+		game:GetService("Workspace"),
+		game:GetService("ReplicatedStorage"),
+		game:GetService("ReplicatedFirst"),
+		game:GetService("Lighting"),
+		game:GetService("Players"),
+		game:GetService("StarterGui"),
+		game:GetService("StarterPack"),
+		game:GetService("StarterPlayer")
+	}
+	
+	for _, service in ipairs(services) do
+		addNode(service, 0, nil)
+	end
+	
+	-- Update canvas size
+	task.wait()
+	local contentSize = explorerLayout.AbsoluteContentSize.Y
+	explorerScroll.CanvasSize = UDim2.new(0, 0, 0, contentSize)
+	
+	print("✓ Explorer tree built!")
+	
+	-- Restore expanded state
+	if next(expandedPaths) then
+		print("🔄 Restoring expanded nodes...")
+		for nodeFrame, data in pairs(childrenContainers) do
+			local obj = data.object
+			if obj and expandedPaths[obj:GetFullName()] then
+				-- Simulate click to expand
+				local expandBtn = nodeFrame:FindFirstChild("ExpandButton")
+				if expandBtn and expandBtn.Visible then
+					-- Manually expand without clicking
+					data.expanded = true
+					expandBtn.Text = "-"
+					
+					-- Build children if not already built
+					if not data.childrenBuilt then
+						data.childrenBuilt = true
+						local children = obj:GetChildren()
+						
+						-- Sort children: Terrain first, Camera last, then alphabetically
+						table.sort(children, function(a, b)
+							local aIsTerrain = a.Name == "Terrain"
+							local bIsTerrain = b.Name == "Terrain"
+							local aIsCamera = a.Name == "Camera"
+							local bIsCamera = b.Name == "Camera"
+							
+							if aIsTerrain then return true end
+							if bIsTerrain then return false end
+							if aIsCamera then return false end
+							if bIsCamera then return true end
+							
+							return a.Name:lower() < b.Name:lower()
+						end)
+						
+						for i, child in ipairs(children) do
+							-- Skip parts named "Part" if filter is enabled
+							if not (filterPartsEnabled and child.Name == "Part" and child:IsA("BasePart")) then
+								local childNode = addNode(child, data.depth + 1, nodeFrame)
+								table.insert(data.children, childNode)
+							end
+						end
+					end
+					
+					-- Show immediate children only
+					for _, childNode in ipairs(data.children) do
+						childNode.Visible = true
+					end
+				end
+			end
+		end
+		reorderAllNodes()
+		print("✓ Expanded state restored!")
+	end
+	
+	-- Re-apply search filter if there was one
+	if searchBar.Text ~= "" then
+		print("🔍 Re-applying search filter:", searchBar.Text)
+		filterExplorer(searchBar.Text)
+	end
+end
+
+-- Search/Filter functionality
+local function filterExplorer(searchText)
+	searchText = searchText:lower()
+	
+	if searchText == "" then
+		-- Reset to hierarchy view - only show root nodes and expanded children
+		for _, child in pairs(explorerScroll:GetChildren()) do
+			if child:IsA("Frame") and child.Name:match("^Node_") then
+				local data = childrenContainers[child]
+				if data then
+					if data.depth == 0 then
+						child.Visible = true
+					else
+						-- Check if parent chain is expanded
+						local shouldShow = true
+						local currentParent = data.parent
+						while currentParent do
+							local parentData = childrenContainers[currentParent]
+							if not parentData or not parentData.expanded then
+								shouldShow = false
+								break
+							end
+							currentParent = parentData.parent
+						end
+						child.Visible = shouldShow
+					end
+				end
+			end
+		end
+		reorderAllNodes()
+		return
+	end
+	
+	-- Filter nodes based on search - show all matches regardless of hierarchy
+	local hasMatches = false
+	for _, child in pairs(explorerScroll:GetChildren()) do
+		if child:IsA("Frame") and child.Name:match("^Node_") then
+			local obj = nodeObjects[child]
+			if obj then
+				local nameMatch = obj.Name:lower():find(searchText, 1, true)
+				local classMatch = obj.ClassName:lower():find(searchText, 1, true)
+				
+				if nameMatch or classMatch then
+					child.Visible = true
+					hasMatches = true
+				else
+					child.Visible = false
+				end
+			end
+		end
+	end
+	
+	-- Reorder visible nodes
+	if hasMatches then
+		local order = 0
+		for _, child in pairs(explorerScroll:GetChildren()) do
+			if child:IsA("Frame") and child.Name:match("^Node_") and child.Visible then
+				child.LayoutOrder = order
+				order = order + 1
+			end
+		end
+	end
+end
+
+-- Connect search bar
+searchBar:GetPropertyChangedSignal("Text"):Connect(function()
+	local searchText = searchBar.Text
+	filterExplorer(searchText)
+	
+	-- Visual feedback when search is active
+	if searchText ~= "" then
+		searchBar.BackgroundColor3 = Color3.fromRGB(50, 40, 20) -- Orange tint
+		explorerTitle.Text = "🔍 Explorer (Search Active - Clear to Expand)"
+		explorerTitle.TextColor3 = Color3.fromRGB(255, 200, 100)
+	else
+		searchBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35) -- Normal
+		explorerTitle.Text = "🔍 Explorer"
+		explorerTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+end)
+
+local function startExplorerSelection()
+	-- If already in selection mode, cancel it
+	if explorerSelectionMode == "target" then
+		explorerSelectionMode = nil
+		targetExplorerButton.Text = "Select from Explorer"
+		targetExplorerButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+		print("✓ Explorer selection cancelled")
+		return
+	end
+	
+	explorerSelectionMode = "target"
+	targetExplorerButton.Text = "Cancel"
+	targetExplorerButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+	print("✓ Explorer selection mode active")
+end
+
+local function performDestroy()
+	if not targetObject then
+		warn("No target object selected!")
+		destroyButton.Text = "SELECT TARGET FIRST"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+		wait(1)
+		destroyButton.Text = "💥 DESTROY TARGET"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+		return
+	end
+	
+	destroyButton.Text = "DESTROYING..."
+	destroyButton.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+	
+	print("═══════════════════════════════")
+	print("DESTROYING:", targetObject.Name)
+	print("PATH:", targetObject:GetFullName())
+	print("═══════════════════════════════")
+	
+	local success = destroyObject(targetObject)
+	
+	if success then
+		destroyButton.Text = "💥 DESTROYED!"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+		print("═══════════════════════════════")
+		print("✓ SUCCESS! Object destroyed")
+		print("═══════════════════════════════")
+		targetObject = nil
+		updateDisplay()
+		
+		-- Auto-refresh explorer
+		print("🔄 Refreshing explorer...")
+		task.wait(0.5)
+		buildExplorerTree()
+		
+		wait(2)
+		destroyButton.Text = "💥 DESTROY TARGET"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+	else
+		destroyButton.Text = "FAILED!"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+		print("═══════════════════════════════")
+		print("✗ FAILED to destroy")
+		print("═══════════════════════════════")
+		wait(2)
+		destroyButton.Text = "💥 DESTROY TARGET"
+		destroyButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+	end
+end
+
+-- Quick Action Functions
+local function destroyBuildingTools()
+	destroyBuildingToolsButton.Text = "DESTROYING..."
+	destroyBuildingToolsButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+	
+	local bt1 = RS:FindFirstChild("Building Tools")
+	local bt2 = RS:FindFirstChild("Building Tools Plus")
+	
+	local count = 0
+	if bt1 then
+		if destroyObject(bt1) then count = count + 1 end
+	end
+	if bt2 then
+		if destroyObject(bt2) then count = count + 1 end
+	end
+	
+	if count > 0 then
+		destroyBuildingToolsButton.Text = "✓ DESTROYED " .. count .. " TOOLS"
+		destroyBuildingToolsButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+		
+		-- Auto-refresh explorer
+		print("🔄 Refreshing explorer...")
+		task.wait(0.5)
+		buildExplorerTree()
+	else
+		destroyBuildingToolsButton.Text = "FAILED OR NOT FOUND"
+		destroyBuildingToolsButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+	end
+	
+	wait(2)
+	destroyBuildingToolsButton.Text = "🔨 Destroy All Building Tools"
+	destroyBuildingToolsButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+end
+
+local function destroyPlayerKick()
+	destroyPlayerKickButton.Text = "DESTROYING..."
+	destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+	
+	local playerKick = RS.RemoteEvents:FindFirstChild("PlayerKick")
+	if playerKick then
+		if destroyObject(playerKick) then
+			destroyPlayerKickButton.Text = "✓ PLAYERKICK DESTROYED"
+			destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+			
+			-- Auto-refresh explorer
+			print("🔄 Refreshing explorer...")
+			task.wait(0.5)
+			buildExplorerTree()
+		else
+			destroyPlayerKickButton.Text = "FAILED"
+			destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+		end
+	else
+		destroyPlayerKickButton.Text = "NOT FOUND"
+		destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+	end
+	
+	wait(2)
+	destroyPlayerKickButton.Text = "🚫 Destroy PlayerKick Remote"
+	destroyPlayerKickButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+end
+
+local function destroyAllHeads()
+	destroyAllHeadsButton.Text = "DESTROYING HEADS..."
+	destroyAllHeadsButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+	
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character then
+			local head = player.Character:FindFirstChild("Head")
+			if head then
+				if destroyObject(head) then
+					count = count + 1
+				end
+				wait(0.1)
+			end
+		end
+	end
+	
+	destroyAllHeadsButton.Text = "✓ DESTROYED " .. count .. " HEADS"
+	destroyAllHeadsButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+	
+	-- Auto-refresh explorer
+	if count > 0 then
+		print("🔄 Refreshing explorer...")
+		task.wait(0.5)
+		buildExplorerTree()
+	end
+	
+	wait(2)
+	destroyAllHeadsButton.Text = "💀 Destroy All Player Heads"
+	destroyAllHeadsButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+end
+
+local function destroyAllPlayers()
+	destroyAllPlayersButton.Text = "NUKING SERVER..."
+	destroyAllPlayersButton.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+	
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= Players.LocalPlayer then
+			if destroyObject(player) then
+				count = count + 1
+			end
+			wait(0.1)
+		end
+	end
+	
+	destroyAllPlayersButton.Text = "☠️ NUKED " .. count .. " PLAYERS"
+	destroyAllPlayersButton.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+	
+	-- Auto-refresh explorer
+	if count > 0 then
+		print("🔄 Refreshing explorer...")
+		task.wait(0.5)
+		buildExplorerTree()
+	end
+	
+	wait(2)
+	destroyAllPlayersButton.Text = "☠️ DESTROY ALL PLAYERS (NUKE)"
+	destroyAllPlayersButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+end
+
+-- Make frame draggable
+local dragging = false
+local dragInput, mousePos, framePos
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		mousePos = input.Position
+		framePos = mainFrame.Position
+		
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - mousePos
+		mainFrame.Position = UDim2.new(
+			framePos.X.Scale,
+			framePos.X.Offset + delta.X,
+			framePos.Y.Scale,
+			framePos.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- Button Connections
+closeButton.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+	selectionBox:Destroy()
+end)
+
+targetClickButton.MouseButton1Click:Connect(function()
+	startClickSelection()
+end)
+
+targetExplorerButton.MouseButton1Click:Connect(function()
+	startExplorerSelection()
+end)
+
+destroyButton.MouseButton1Click:Connect(function()
+	performDestroy()
+end)
+
+destroyBuildingToolsButton.MouseButton1Click:Connect(function()
+	destroyBuildingTools()
+end)
+
+destroyPlayerKickButton.MouseButton1Click:Connect(function()
+	destroyPlayerKick()
+end)
+
+destroyAllHeadsButton.MouseButton1Click:Connect(function()
+	destroyAllHeads()
+end)
+
+destroyAllPlayersButton.MouseButton1Click:Connect(function()
+	destroyAllPlayers()
+end)
+
+-- Hover effects
+local function addHoverEffect(button, normalColor, hoverColor)
+	button.MouseEnter:Connect(function()
+		button.BackgroundColor3 = hoverColor
+	end)
+	button.MouseLeave:Connect(function()
+		button.BackgroundColor3 = normalColor
+	end)
+end
+
+addHoverEffect(closeButton, Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 100, 100))
+addHoverEffect(targetClickButton, Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 120, 120))
+addHoverEffect(targetExplorerButton, Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 120, 120))
+addHoverEffect(destroyButton, Color3.fromRGB(255, 50, 50), Color3.fromRGB(255, 100, 100))
+addHoverEffect(destroyBuildingToolsButton, Color3.fromRGB(200, 100, 50), Color3.fromRGB(220, 120, 70))
+addHoverEffect(destroyPlayerKickButton, Color3.fromRGB(200, 100, 50), Color3.fromRGB(220, 120, 70))
+addHoverEffect(destroyAllHeadsButton, Color3.fromRGB(200, 100, 50), Color3.fromRGB(220, 120, 70))
+addHoverEffect(destroyAllPlayersButton, Color3.fromRGB(150, 50, 50), Color3.fromRGB(200, 80, 80))
+
+-- Initialize Explorer
+task.spawn(function()
+	buildExplorerTree()
+end)
+
+print("═══════════════════════════════")
+print("DESTROYER GUI v1.0")
+print("F3XPartModificationLimit Exploit")
+print("═══════════════════════════════")
+print("Features:")
+print("  • Built-in Explorer")
+print("  • Universal Instance Destroyer")
+print("  • Quick Actions (Tools, Kick, Heads, Players)")
+print("  • Click or Explorer selection")
+print("═══════════════════════════════")
+print("")
+print("Instructions:")
+print("  1. Select target to destroy")
+print("  2. Click 'DESTROY TARGET'")
+print("  OR use Quick Actions")
+print("═══════════════════════════════")
+print("⚠️ WARNING: EXTREMELY POWERFUL")
+print("   Use at your own risk!")
+print("═══════════════════════════════")
