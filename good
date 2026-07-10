@@ -384,6 +384,151 @@ local destroyPlayersCorner = Instance.new("UICorner")
 destroyPlayersCorner.CornerRadius = UDim.new(0, 4)
 destroyPlayersCorner.Parent = destroyAllPlayersButton
 
+-- Player Kicking Section
+local playerKickLabel = Instance.new("TextLabel")
+playerKickLabel.Name = "PlayerKickLabel"
+playerKickLabel.Size = UDim2.new(1, 0, 0, 25)
+playerKickLabel.Position = UDim2.new(0, 0, 0, 285)
+playerKickLabel.BackgroundTransparency = 1
+playerKickLabel.Text = "🎯 Player Kicking:"
+playerKickLabel.TextColor3 = Color3.fromRGB(255, 150, 150)
+playerKickLabel.TextSize = 14
+playerKickLabel.Font = Enum.Font.GothamBold
+playerKickLabel.TextXAlignment = Enum.TextXAlignment.Left
+playerKickLabel.Parent = contentFrame
+
+-- Player Navigation Container
+local playerNavFrame = Instance.new("Frame")
+playerNavFrame.Name = "PlayerNavFrame"
+playerNavFrame.Size = UDim2.new(1, 0, 0, 30)
+playerNavFrame.Position = UDim2.new(0, 0, 0, 315)
+playerNavFrame.BackgroundTransparency = 1
+playerNavFrame.Parent = contentFrame
+
+-- Previous Player Button
+local prevPlayerButton = Instance.new("TextButton")
+prevPlayerButton.Name = "PrevPlayerButton"
+prevPlayerButton.Size = UDim2.new(0, 30, 0, 30)
+prevPlayerButton.Position = UDim2.new(0, 0, 0, 0)
+prevPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+prevPlayerButton.Text = "◀"
+prevPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+prevPlayerButton.TextSize = 14
+prevPlayerButton.Font = Enum.Font.GothamBold
+prevPlayerButton.BorderSizePixel = 0
+prevPlayerButton.Parent = playerNavFrame
+
+local prevPlayerCorner = Instance.new("UICorner")
+prevPlayerCorner.CornerRadius = UDim.new(0, 4)
+prevPlayerCorner.Parent = prevPlayerButton
+
+-- Player Display
+local playerDisplay = Instance.new("TextLabel")
+playerDisplay.Name = "PlayerDisplay"
+playerDisplay.Size = UDim2.new(1, -100, 0, 30)
+playerDisplay.Position = UDim2.new(0, 35, 0, 0)
+playerDisplay.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+playerDisplay.Text = "No players"
+playerDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+playerDisplay.TextSize = 12
+playerDisplay.Font = Enum.Font.Gotham
+playerDisplay.BorderSizePixel = 0
+playerDisplay.Parent = playerNavFrame
+
+local playerDisplayCorner = Instance.new("UICorner")
+playerDisplayCorner.CornerRadius = UDim.new(0, 4)
+playerDisplayCorner.Parent = playerDisplay
+
+local playerDisplayStroke = Instance.new("UIStroke")
+playerDisplayStroke.Color = Color3.fromRGB(60, 60, 60)
+playerDisplayStroke.Thickness = 1
+playerDisplayStroke.Parent = playerDisplay
+
+-- Next Player Button
+local nextPlayerButton = Instance.new("TextButton")
+nextPlayerButton.Name = "NextPlayerButton"
+nextPlayerButton.Size = UDim2.new(0, 30, 0, 30)
+nextPlayerButton.Position = UDim2.new(1, -30, 0, 0)
+nextPlayerButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+nextPlayerButton.Text = "▶"
+nextPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+nextPlayerButton.TextSize = 14
+nextPlayerButton.Font = Enum.Font.GothamBold
+nextPlayerButton.BorderSizePixel = 0
+nextPlayerButton.Parent = playerNavFrame
+
+local nextPlayerCorner = Instance.new("UICorner")
+nextPlayerCorner.CornerRadius = UDim.new(0, 4)
+nextPlayerCorner.Parent = nextPlayerButton
+
+-- Refresh Players Button
+local refreshPlayersButton = Instance.new("TextButton")
+refreshPlayersButton.Name = "RefreshPlayersButton"
+refreshPlayersButton.Size = UDim2.new(0, 30, 0, 30)
+refreshPlayersButton.Position = UDim2.new(1, -65, 0, 0)
+refreshPlayersButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+refreshPlayersButton.Text = "🔄"
+refreshPlayersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+refreshPlayersButton.TextSize = 14
+refreshPlayersButton.Font = Enum.Font.GothamBold
+refreshPlayersButton.BorderSizePixel = 0
+refreshPlayersButton.Parent = playerNavFrame
+
+local refreshPlayersCorner = Instance.new("UICorner")
+refreshPlayersCorner.CornerRadius = UDim.new(0, 4)
+refreshPlayersCorner.Parent = refreshPlayersButton
+
+-- Kick Single Player Button
+local kickPlayerButton = Instance.new("TextButton")
+kickPlayerButton.Name = "KickPlayerButton"
+kickPlayerButton.Size = UDim2.new(1, 0, 0, 28)
+kickPlayerButton.Position = UDim2.new(0, 0, 0, 350)
+kickPlayerButton.BackgroundColor3 = Color3.fromRGB(180, 80, 80)
+kickPlayerButton.Text = "👢 Kick Selected Player"
+kickPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+kickPlayerButton.TextSize = 11
+kickPlayerButton.Font = Enum.Font.GothamBold
+kickPlayerButton.BorderSizePixel = 0
+kickPlayerButton.Parent = contentFrame
+
+local kickPlayerCorner = Instance.new("UICorner")
+kickPlayerCorner.CornerRadius = UDim.new(0, 4)
+kickPlayerCorner.Parent = kickPlayerButton
+
+-- Kick All Others Button
+local kickOthersButton = Instance.new("TextButton")
+kickOthersButton.Name = "KickOthersButton"
+kickOthersButton.Size = UDim2.new(0.48, 0, 0, 28)
+kickOthersButton.Position = UDim2.new(0, 0, 0, 383)
+kickOthersButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+kickOthersButton.Text = "👥 Kick Others"
+kickOthersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+kickOthersButton.TextSize = 11
+kickOthersButton.Font = Enum.Font.GothamBold
+kickOthersButton.BorderSizePixel = 0
+kickOthersButton.Parent = contentFrame
+
+local kickOthersCorner = Instance.new("UICorner")
+kickOthersCorner.CornerRadius = UDim.new(0, 4)
+kickOthersCorner.Parent = kickOthersButton
+
+-- Kick Everyone Button
+local kickEveryoneButton = Instance.new("TextButton")
+kickEveryoneButton.Name = "KickEveryoneButton"
+kickEveryoneButton.Size = UDim2.new(0.48, 0, 0, 28)
+kickEveryoneButton.Position = UDim2.new(0.52, 0, 0, 383)
+kickEveryoneButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+kickEveryoneButton.Text = "☠️ Kick All"
+kickEveryoneButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+kickEveryoneButton.TextSize = 11
+kickEveryoneButton.Font = Enum.Font.GothamBold
+kickEveryoneButton.BorderSizePixel = 0
+kickEveryoneButton.Parent = contentFrame
+
+local kickEveryoneCorner = Instance.new("UICorner")
+kickEveryoneCorner.CornerRadius = UDim.new(0, 4)
+kickEveryoneCorner.Parent = kickEveryoneButton
+
 -- Destroy Button
 local destroyButton = Instance.new("TextButton")
 destroyButton.Name = "DestroyButton"
@@ -417,6 +562,11 @@ local nodeObjects = {} -- Map node frames to their objects
 local clickConnection = nil
 local filterPartsEnabled = false
 
+-- Player Kicking Variables
+local selectedKickPlayer = nil
+local currentKickPlayerIndex = 0
+local kickPlayerList = {}
+
 -- Filter Parts Checkbox Logic
 filterPartsCheckbox.MouseButton1Click:Connect(function()
 	filterPartsEnabled = not filterPartsEnabled
@@ -444,6 +594,139 @@ local function updateDisplay()
 		targetDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
 	end
 end
+
+-- Player Kicking Functions
+local function refreshKickPlayerList()
+	kickPlayerList = {}
+	for _, p in pairs(Players:GetPlayers()) do
+		table.insert(kickPlayerList, p)
+	end
+	
+	-- Sort alphabetically
+	table.sort(kickPlayerList, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+	
+	-- Reset index if out of bounds
+	if currentKickPlayerIndex > #kickPlayerList then
+		currentKickPlayerIndex = #kickPlayerList
+	end
+	if currentKickPlayerIndex < 1 and #kickPlayerList > 0 then
+		currentKickPlayerIndex = 1
+	end
+	
+	print("[PLAYER LIST] Refreshed:", #kickPlayerList, "players")
+end
+
+local function updateKickPlayerDisplay()
+	if #kickPlayerList == 0 then
+		playerDisplay.Text = "No players"
+		playerDisplay.TextColor3 = Color3.fromRGB(150, 150, 150)
+		selectedKickPlayer = nil
+	elseif currentKickPlayerIndex > 0 and currentKickPlayerIndex <= #kickPlayerList then
+		selectedKickPlayer = kickPlayerList[currentKickPlayerIndex]
+		playerDisplay.Text = string.format("%s (%d/%d)", selectedKickPlayer.Name, currentKickPlayerIndex, #kickPlayerList)
+		playerDisplay.TextColor3 = Color3.fromRGB(255, 150, 150)
+	else
+		playerDisplay.Text = "Invalid selection"
+		playerDisplay.TextColor3 = Color3.fromRGB(200, 100, 100)
+		selectedKickPlayer = nil
+	end
+end
+
+local function kickPlayer(playerInstance)
+	if not playerInstance or not playerInstance:IsA("Player") then
+		warn("[KICK] Invalid player instance")
+		return false
+	end
+	
+	print("[KICK] Attempting to kick:", playerInstance.Name)
+	print("[KICK] Using F3XPartModificationLimit exploit")
+	
+	local success = destroyObject(playerInstance)
+	
+	if success then
+		print("[KICK] ✓ Player kicked successfully:", playerInstance.Name)
+		wait(0.5)
+		buildExplorerTree() -- Refresh explorer
+		refreshKickPlayerList()
+		updateKickPlayerDisplay()
+	else
+		warn("[KICK] ✗ Failed to kick player:", playerInstance.Name)
+	end
+	
+	return success
+end
+
+local function kickAllOthers()
+	print("[KICK ALL OTHERS] Starting mass kick (excluding LocalPlayer)...")
+	local kickedCount = 0
+	local failedCount = 0
+	
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= player then -- Exclude LocalPlayer
+			print(string.format("[KICK %d] Kicking: %s", kickedCount + 1, p.Name))
+			local success = destroyObject(p)
+			
+			if success then
+				kickedCount = kickedCount + 1
+			else
+				failedCount = failedCount + 1
+			end
+			
+			wait(0.3) -- Small delay between kicks
+		end
+	end
+	
+	print(string.format("[KICK ALL OTHERS] Complete! Kicked: %d | Failed: %d", kickedCount, failedCount))
+	wait(0.5)
+	buildExplorerTree()
+	refreshKickPlayerList()
+	updateKickPlayerDisplay()
+end
+
+local function kickEveryone()
+	print("[KICK EVERYONE] Starting NUKE (including LocalPlayer)...")
+	local kickedCount = 0
+	local failedCount = 0
+	
+	for _, p in pairs(Players:GetPlayers()) do
+		print(string.format("[KICK %d] Kicking: %s", kickedCount + 1, p.Name))
+		local success = destroyObject(p)
+		
+		if success then
+			kickedCount = kickedCount + 1
+		else
+			failedCount = failedCount + 1
+		end
+		
+		wait(0.3) -- Small delay between kicks
+	end
+	
+	print(string.format("[KICK EVERYONE] Complete! Kicked: %d | Failed: %d", kickedCount, failedCount))
+	-- No need to refresh since LocalPlayer will be kicked
+end
+
+local function findPlayerByPartialName(partialName)
+	local lowerPartial = partialName:lower()
+	
+	-- First try exact match
+	for _, p in pairs(Players:GetPlayers()) do
+		if p.Name:lower() == lowerPartial then
+			return p
+		end
+	end
+	
+	-- Then try partial match
+	for _, p in pairs(Players:GetPlayers()) do
+		if p.Name:lower():find(lowerPartial, 1, true) then
+			return p
+		end
+	end
+	
+	return nil
+end
+
 
 local function stopSelecting()
 	isSelecting = false
@@ -1077,15 +1360,15 @@ local function destroyAllPlayers()
 	destroyAllPlayersButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
 end
 
--- Make frame draggable
+-- Make frame draggable (Mobile + PC compatible)
 local dragging = false
-local dragInput, mousePos, framePos
+local dragInput, dragStart, startPos
 
 titleBar.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
-		mousePos = input.Position
-		framePos = mainFrame.Position
+		dragStart = input.Position
+		startPos = mainFrame.Position
 		
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
@@ -1096,19 +1379,19 @@ titleBar.InputBegan:Connect(function(input)
 end)
 
 titleBar.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement then
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 		dragInput = input
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if input == dragInput and dragging then
-		local delta = input.Position - mousePos
+	if dragging and input == dragInput then
+		local delta = input.Position - dragStart
 		mainFrame.Position = UDim2.new(
-			framePos.X.Scale,
-			framePos.X.Offset + delta.X,
-			framePos.Y.Scale,
-			framePos.Y.Offset + delta.Y
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
 		)
 	end
 end)
@@ -1147,6 +1430,107 @@ destroyAllPlayersButton.MouseButton1Click:Connect(function()
 	destroyAllPlayers()
 end)
 
+-- Player Kicking Button Handlers
+prevPlayerButton.MouseButton1Click:Connect(function()
+	if #kickPlayerList == 0 then return end
+	
+	currentKickPlayerIndex = currentKickPlayerIndex - 1
+	if currentKickPlayerIndex < 1 then
+		currentKickPlayerIndex = #kickPlayerList
+	end
+	
+	updateKickPlayerDisplay()
+	print("[NAVIGATION] Previous player:", selectedKickPlayer and selectedKickPlayer.Name or "None")
+end)
+
+nextPlayerButton.MouseButton1Click:Connect(function()
+	if #kickPlayerList == 0 then return end
+	
+	currentKickPlayerIndex = currentKickPlayerIndex + 1
+	if currentKickPlayerIndex > #kickPlayerList then
+		currentKickPlayerIndex = 1
+	end
+	
+	updateKickPlayerDisplay()
+	print("[NAVIGATION] Next player:", selectedKickPlayer and selectedKickPlayer.Name or "None")
+end)
+
+refreshPlayersButton.MouseButton1Click:Connect(function()
+	print("[REFRESH] Updating player list...")
+	refreshKickPlayerList()
+	updateKickPlayerDisplay()
+end)
+
+kickPlayerButton.MouseButton1Click:Connect(function()
+	if not selectedKickPlayer then
+		warn("[KICK] No player selected!")
+		return
+	end
+	
+	kickPlayer(selectedKickPlayer)
+end)
+
+kickOthersButton.MouseButton1Click:Connect(function()
+	if #Players:GetPlayers() <= 1 then
+		warn("[KICK OTHERS] No other players to kick!")
+		return
+	end
+	
+	kickAllOthers()
+end)
+
+kickEveryoneButton.MouseButton1Click:Connect(function()
+	if #Players:GetPlayers() == 0 then
+		warn("[KICK EVERYONE] No players to kick!")
+		return
+	end
+	
+	kickEveryone()
+end)
+
+-- Chat Commands for Player Kicking
+player.Chatted:Connect(function(msg)
+	local lowerMsg = msg:lower()
+	
+	if lowerMsg == ".kick all" then
+		print("[CHAT CMD] .kick all")
+		kickEveryone()
+		
+	elseif lowerMsg == ".kick others" then
+		print("[CHAT CMD] .kick others")
+		kickAllOthers()
+		
+	else
+		local partialName = msg:match("^%.kick%s+(.+)$")
+		if partialName then
+			print("[CHAT CMD] .kick", partialName)
+			local targetPlayer = findPlayerByPartialName(partialName)
+			
+			if targetPlayer then
+				print("[CHAT CMD] Found player:", targetPlayer.Name)
+				kickPlayer(targetPlayer)
+			else
+				warn("[CHAT CMD] Player not found:", partialName)
+			end
+		end
+	end
+end)
+
+-- Auto-refresh player list on player changes
+Players.PlayerAdded:Connect(function(p)
+	print("[PLAYER ADDED]", p.Name)
+	wait(0.5)
+	refreshKickPlayerList()
+	updateKickPlayerDisplay()
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	print("[PLAYER REMOVING]", p.Name)
+	wait(0.5)
+	refreshKickPlayerList()
+	updateKickPlayerDisplay()
+end)
+
 -- Hover effects
 local function addHoverEffect(button, normalColor, hoverColor)
 	button.MouseEnter:Connect(function()
@@ -1166,6 +1550,18 @@ addHoverEffect(destroyPlayerKickButton, Color3.fromRGB(200, 100, 50), Color3.fro
 addHoverEffect(destroyAllHeadsButton, Color3.fromRGB(200, 100, 50), Color3.fromRGB(220, 120, 70))
 addHoverEffect(destroyAllPlayersButton, Color3.fromRGB(150, 50, 50), Color3.fromRGB(200, 80, 80))
 
+-- Player Kicking Button Hover Effects
+addHoverEffect(prevPlayerButton, Color3.fromRGB(50, 50, 50), Color3.fromRGB(70, 70, 70))
+addHoverEffect(nextPlayerButton, Color3.fromRGB(50, 50, 50), Color3.fromRGB(70, 70, 70))
+addHoverEffect(refreshPlayersButton, Color3.fromRGB(50, 50, 50), Color3.fromRGB(70, 70, 70))
+addHoverEffect(kickPlayerButton, Color3.fromRGB(180, 80, 80), Color3.fromRGB(200, 100, 100))
+addHoverEffect(kickOthersButton, Color3.fromRGB(200, 100, 50), Color3.fromRGB(220, 120, 70))
+addHoverEffect(kickEveryoneButton, Color3.fromRGB(150, 50, 50), Color3.fromRGB(200, 80, 80))
+
+-- Initialize Player List
+refreshKickPlayerList()
+updateKickPlayerDisplay()
+
 -- Initialize Explorer
 task.spawn(function()
 	buildExplorerTree()
@@ -1179,6 +1575,7 @@ print("Features:")
 print("  • Built-in Explorer")
 print("  • Universal Instance Destroyer")
 print("  • Quick Actions (Tools, Kick, Heads, Players)")
+print("  • Player Kicking System")
 print("  • Click or Explorer selection")
 print("═══════════════════════════════")
 print("")
@@ -1186,6 +1583,12 @@ print("Instructions:")
 print("  1. Select target to destroy")
 print("  2. Click 'DESTROY TARGET'")
 print("  OR use Quick Actions")
+print("  OR use Player Kicking section")
+print("")
+print("Chat Commands:")
+print("  .kick <username>  - Kick specific player")
+print("  .kick others      - Kick all except you")
+print("  .kick all         - Kick everyone")
 print("═══════════════════════════════")
 print("⚠️ WARNING: EXTREMELY POWERFUL")
 print("   Use at your own risk!")
